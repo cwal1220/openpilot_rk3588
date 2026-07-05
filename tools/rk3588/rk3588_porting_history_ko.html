@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orange Pi RK3588 openpilot 포팅 작업 이력 및 실행 방법</title>
+  <style>
+    :root {
+      --bg: #f5f2ea;
+      --paper: #fffdf8;
+      --ink: #1f1f1d;
+      --muted: #63615b;
+      --line: #d7d0bf;
+      --code: #211f1b;
+      --code-bg: #eee8dc;
+      --ok: #0d6f4d;
+      --warn: #9a6500;
+      --bad: #a33b32;
+      --blue: #245b84;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 36px 24px 72px;
+    }
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 34px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-size: 21px;
+    }
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 16px;
+    }
+    p, ul, ol { margin: 8px 0; }
+    li { margin: 6px 0; }
+    code {
+      background: var(--code-bg);
+      color: var(--code);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.92em;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      margin: 10px 0 14px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border-radius: 7px;
+      border: 1px solid #15130f;
+      background: #211f1b;
+      color: #fbf4e7;
+    }
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      border-radius: 0;
+      font-size: 0.9em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px;
+      background: var(--paper);
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #ece5d6; }
+    .lede {
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 900px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 14px 0 18px;
+    }
+    .metric {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .metric .value {
+      margin-top: 5px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .metric .hint {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .callout {
+      border-left: 5px solid var(--blue);
+      background: var(--paper);
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .ok { border-left-color: var(--ok); }
+    .warn { border-left-color: var(--warn); }
+    .bad { border-left-color: var(--bad); }
+    .timeline {
+      list-style: none;
+      padding-left: 0;
+      counter-reset: step;
+    }
+    .timeline li {
+      position: relative;
+      margin: 0 0 14px;
+      padding: 12px 14px 12px 46px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .timeline li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: white;
+      text-align: center;
+      line-height: 22px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .title {
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 860px) {
+      main { padding: 24px 14px 48px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media print {
+      body { background: white; }
+      main { max-width: none; padding: 20px; }
+      .metric, .callout, table, pre { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Orange Pi RK3588 openpilot 포팅 작업 이력 및 실행 방법</h1>
+    <p class="lede">
+      다음 실행 때 같은 시행착오를 반복하지 않기 위한 보드 기준 문서입니다.
+      현재 기준 보드는 유선 연결된 <code>orangepi@192.168.219.114</code>,
+      실제 체크아웃은 <code>/home/orangepi/openpilot</code>입니다.
+      로컬 <code>/Users/chan/Documents/RK</code>는 문서와 작업 조율용으로만 취급합니다.
+    </p>
+    <div class="meta">
+      <span class="pill">갱신일: 2026-07-04</span>
+      <span class="pill">보드: Orange Pi RK3588</span>
+      <span class="pill">경로: /home/orangepi/openpilot</span>
+      <span class="pill">HEAD: 4532320fb</span>
+      <span class="pill">현재 경로: USB webcam + OpenCL warp + RKNN</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>현재 결론</h2>
+    <div class="grid">
+      <div class="metric">
+        <div class="label">Camera</div>
+        <div class="value">1280x720</div>
+        <div class="hint">MJPG, 25 FPS, ROAD_CAM=0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Preprocess</div>
+        <div class="value">OpenCL</div>
+        <div class="hint">직접 YUV6 warp, tinygrad 경로 아님</div>
+      </div>
+      <div class="metric">
+        <div class="label">Inference</div>
+        <div class="value">RKNN</div>
+        <div class="hint">NPU core mask 7 기본값</div>
+      </div>
+      <div class="metric">
+        <div class="label">최근 성능</div>
+        <div class="value">~20 FPS</div>
+        <div class="hint">정리 후 smoke, model period mean 50.01 ms</div>
+      </div>
+    </div>
+    <div class="callout ok">
+      <strong>현재 권장 실행:</strong>
+      <code>BIG=1 PYTHONDONTWRITEBYTECODE=1 tools/rk3588/run_openpilot_opencl_rknn.sh</code>
+      <br>
+      wrapper가 RKNN 모델 해시 확인, OpenCL warp 라이브러리 준비, webcam/modeld env 설정,
+      <code>prebuilt</code> marker 생성, modeld/webcamerad CPU affinity 적용,
+      <code>launch_openpilot.sh</code> 실행까지 맡습니다.
+    </div>
+    <div class="callout warn">
+      <strong>중요:</strong> <code>prebuilt</code>는 지우면 안 되는 실행 marker입니다.
+      이 파일이 없으면 기본 launcher가 전체 SCons 빌드를 다시 시작하면서 Cabana 등 불필요한 빌드로 빠집니다.
+      현재 wrapper는 실행 전 이 marker를 자동 생성합니다.
+    </div>
+    <div class="callout ok">
+      <strong>현재 상태:</strong>
+      RKNN + 직접 OpenCL warp + modeld/webcamerad big-core affinity 조합으로 10분 BIG UI full bench를 통과했습니다.
+      보드 venv는 repo pin인 <code>pycapnp==2.1.0</code>으로 유지합니다.
+      최신 freeze 원인은 <code>modeld</code>의 RKNNLite Python wrapper 출력 release/ABI 경로였고,
+      직접 <code>librknnrt.so</code> C API wrapper에서 <code>rknn_outputs_release()</code>를 보장하도록 바꾼 뒤
+      10분 run이 <code>bench_rc=0</code>, <code>metrics_rc=0</code>로 끝났습니다.
+      최종 측정은 model execution 평균 <code>34.839 ms</code>, publish period 평균 <code>50.000 ms</code>, frame drop <code>0</code>입니다.
+    </div>
+  </section>
+
+  <section>
+    <h2>빠른 실행 절차</h2>
+    <h3>1. 보드 접속</h3>
+    <pre><code>ssh orangepi@192.168.219.114
+cd /home/orangepi/openpilot</code></pre>
+
+    <h3>2. 실행 전 환경 확인</h3>
+    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --print-env</code></pre>
+    <p>정상 출력에는 아래 값이 포함되어야 합니다.</p>
+    <pre><code>export USE_WEBCAM=1
+export ROAD_CAM=0
+export WEBCAM_WIDTH=1280
+export WEBCAM_HEIGHT=720
+export WEBCAM_FPS=25
+export WEBCAM_FOURCC=MJPG
+export OPENPILOT_MODELD_RKNN=1
+export OPENPILOT_MODELD_OPENCL_WARP=1
+export OPENPILOT_RKNN_CORE_MASK=7
+export OPENPILOT_RK3588_AFFINITY=1
+export OPENPILOT_RK3588_BIG_CORES=4-7
+export OPENPILOT_RKNN_MODEL=/home/orangepi/.openpilot/models/driving_supercombo_rk3588.rknn
+export OPENPILOT_OPENCL_WARP_LIB=/home/orangepi/.openpilot/lib/libopencl_yuv6_warp.so</code></pre>
+
+    <h3>3. 준비만 수행</h3>
+    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --prepare-only</code></pre>
+    <p>OpenCL warp 라이브러리를 강제로 다시 빌드하려면:</p>
+    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --force-build --prepare-only</code></pre>
+
+    <h3>4. 전체 파이프라인 실행, BIG UI</h3>
+    <pre><code>BIG=1 PYTHONDONTWRITEBYTECODE=1 tools/rk3588/run_openpilot_opencl_rknn.sh</code></pre>
+    <p>
+      <code>BIG=1</code>은 PC/RK3588 환경에서도 큰 UI 레이아웃을 쓰게 합니다.
+      wrapper는 <code>DISPLAY</code>, <code>XAUTHORITY</code>, <code>XDG_RUNTIME_DIR</code>도 SSH 실행에 맞춰 가능한 범위에서 자동 보정합니다.
+    </p>
+
+    <h3>5. 종료와 남은 프로세스 확인</h3>
+    <p>정상적으로는 실행 터미널에서 <code>Ctrl-C</code>를 먼저 사용합니다. 멈춘 프로세스가 남으면 아래처럼 확인합니다.</p>
+    <pre><code>pgrep -af '[r]un_webcam_bench|[m]odeld|[w]ebcamerad|[u]i\.ui|[s]oundd|[c]alibrationd|[p]lannerd|[l]aunch_chffrplus|[m]anager.py' || true</code></pre>
+  </section>
+
+  <section>
+    <h2>벤치 및 측정 절차</h2>
+    <h3>BIG UI 포함 controlled bench</h3>
+    <p>
+      manager의 실제 ignition/started 조건과 별개로, 카메라, UI, modeld, calibrationd, plannerd를 강제로 띄워
+      preview와 inference overlay를 확인하려면 bench runner를 사용합니다.
+    </p>
+    <pre><code>cd /home/orangepi/openpilot
+set -a
+. &lt;(tools/rk3588/run_openpilot_opencl_rknn.sh --print-env)
+set +a
+export BIG=1
+export PYTHONDONTWRITEBYTECODE=1
+export OPENPILOT_PREFIX=rk3588_bench
+rm -rf /dev/shm/msgq_${OPENPILOT_PREFIX}
+./.venv/bin/python tools/rk3588/run_webcam_bench.py \
+  --duration 90 \
+  --processes webcamerad,ui,soundd,modeld,calibrationd,plannerd \
+  --road-cam 0 --fourcc MJPG --width 1280 --height 720 --fps 25</code></pre>
+
+    <h3>modelV2 timing 측정</h3>
+    <p>bench나 전체 파이프라인이 이미 떠 있는 상태에서 같은 prefix로 측정합니다.</p>
+    <pre><code>OPENPILOT_PREFIX=rk3588_bench \
+PYTHONDONTWRITEBYTECODE=1 \
+./.venv/bin/python tools/rk3588/measure_modeld_metrics.py --duration 60</code></pre>
+
+    <h3>최종 확인된 10분 성능</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>항목</th>
+          <th>평균</th>
+          <th>p50</th>
+          <th>p95</th>
+          <th>최대</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>road_period</code></td>
+          <td>50 ms 목표</td>
+          <td>고정 webcam 입력</td>
+          <td>정상 preview</td>
+          <td>BIG UI 포함</td>
+        </tr>
+        <tr>
+          <td><code>publish_period</code></td>
+          <td>50.000 ms</td>
+          <td>50.001 ms</td>
+          <td>52.075 ms</td>
+          <td>105.381 ms</td>
+        </tr>
+        <tr>
+          <td><code>model_execution</code></td>
+          <td>34.839 ms</td>
+          <td>34.562 ms</td>
+          <td>37.320 ms</td>
+          <td>54.223 ms</td>
+        </tr>
+        <tr>
+          <td><code>frame_drop_field</code></td>
+          <td>0.000</td>
+          <td>0.000</td>
+          <td>0.000</td>
+          <td>0.000</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="small">
+      이 수치는 <code>OPENPILOT_RKNN_CORE_MASK=7</code>, RKNN input queue float16 최적화,
+      modeld/webcamerad <code>4-7</code> CPU affinity를 적용한 10분 BIG UI full bench 결과입니다.
+      최신 10분 run id는 <code>/home/orangepi/rk3588_debug_runs/rk3588_long_20260704_111947</code>입니다.
+      model publish period 평균 기준 <code>20.000 FPS</code> 수준입니다.
+    </p>
+    <div class="callout ok">
+      <strong>메모리 안정화 확인:</strong>
+      동일 monitor 기준 <code>modeld</code> PSS는 첫 샘플 <code>450,538 KB</code>,
+      마지막 샘플 <code>455,042 KB</code>, 최대 <code>455,042 KB</code>로 plateau였습니다.
+      <code>ui</code>, <code>webcamerad</code>, <code>soundd</code>, <code>plannerd</code>, <code>calibrationd</code> 모두 swap 사용량 0이었고,
+      종료 후 <code>MemAvailable</code>은 약 <code>7.32 GB</code>까지 회복됐습니다.
+    </div>
+    <h3>plannerd 메모리 원인 분리 결과</h3>
+    <p>
+      bench runner의 fork/COW 부작용인지 확인하기 위해 <code>plannerd</code>만 별도 Python interpreter로 직접 띄웠습니다.
+      같은 prefix에서 <code>webcamerad,ui,soundd,modeld,calibrationd</code>는 bench runner가 띄우고,
+      <code>plannerd</code>는 <code>./.venv/bin/python -m openpilot.selfdrive.controls.plannerd</code>로 실행했습니다.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>항목</th>
+          <th>결과</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>성능</td>
+          <td>road 평균 <code>20.000 FPS</code>, model 평균 <code>19.983 FPS</code>, model execution 평균 <code>30.670 ms</code>, p95 <code>33.424 ms</code></td>
+        </tr>
+        <tr>
+          <td>이전 plannerd PSS</td>
+          <td><code>75,805 KB</code>에서 <code>366,374 KB</code>로 증가</td>
+        </tr>
+        <tr>
+          <td>분류</td>
+          <td>bench runner 때문에 생긴 가짜 증가가 아니라, 실제 runtime 증가였습니다. 이후 microbench로 MPC solver 자체는 배제했습니다.</td>
+        </tr>
+        <tr>
+          <td>당시 관찰</td>
+          <td><code>config_realtime_process()</code>가 Python GC를 끄는 경로였습니다. GC on full probe는 안정적이었고, GC off full probe는 110초에 PSS <code>51,720 KB -&gt; 188,094 KB</code>로 증가했습니다.</td>
+        </tr>
+        <tr>
+          <td>최종 정리</td>
+          <td>이후 실제 원인은 보드 venv의 <code>pycapnp 2.2.2</code>와 GC-off 조합으로 좁혀졌습니다. repo pin인 <code>pycapnp 2.1.0</code>에서는 같은 메시징 probe가 cyclic garbage 0개였으므로, <code>realtime.py</code> GC gate 실험은 제거했습니다.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>웹캠 intrinsic 재계산 절차</h2>
+    <p>
+      현재 적용값은 37장 체커보드 이미지로 계산한 값입니다.
+      체커보드는 안쪽 코너 기준 가로 <code>10</code>, 세로 <code>7</code>입니다.
+      이 도구는 openpilot 파이프라인과 독립적으로 OpenCV preview만 띄웁니다.
+    </p>
+    <pre><code>cd /home/orangepi/openpilot
+PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python tools/rk3588/calibrate_webcam_intrinsics.py collect \
+  --camera 0 --cols 10 --rows 7 --width 1280 --height 720 --fps 25 --fourcc MJPG</code></pre>
+    <p>화면을 보며 터치하면 이미지가 저장됩니다. 충분히 찍은 뒤:</p>
+    <pre><code>PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python tools/rk3588/calibrate_webcam_intrinsics.py solve \
+  --cols 10 --rows 7</code></pre>
+    <p>현재 intrinsic은 <code>openpilot/common/transformations/camera.py</code>의 webcam config에 하드코딩되어 있습니다.</p>
+    <pre><code>width=1280 height=720
+fx=972.529486 fy=949.860567
+cx=695.545910 cy=445.315425</code></pre>
+  </section>
+
+  <section>
+    <h2>작업 이력</h2>
+    <ol class="timeline">
+      <li>
+        <div class="title">초기 RK3588 벤치 MVP</div>
+        <p>
+          초기 authoritative repo는 <code>orangepi@192.168.219.113:/home/orangepi/openpilot</code>였고,
+          유선 연결 후 현재 주소는 <code>192.168.219.114</code>입니다.
+          보드 checkout은 <code>master</code>, <code>4532320fb</code>에서 시작했습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">USB webcam 경로 확정</div>
+        <p>
+          native camerad/MIPI 대신 <code>USE_WEBCAM=1</code> + Python webcamerad를 사용합니다.
+          검증된 기본값은 <code>ROAD_CAM=0</code>, <code>1280x720</code>, <code>MJPG</code>, <code>25 FPS</code>입니다.
+          <code>WEBCAM_FOURCC</code>는 4글자일 때만 적용하고, 잘못된 값은 fallback합니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">tinygrad/OpenCL 경로 폐기</div>
+        <p>
+          tinygrad <code>DEV=CL</code>은 간단한 tensor smoke에서는 동작했지만 실제 모델 경로에서는 안정적인 대안이 아니었습니다.
+          현재 실사용 포팅 경로는 tinygrad를 버리고 직접 OpenCL 전처리 + RKNN 추론 조합입니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">RKNN 변환 감사</div>
+        <p>
+          변환 후보였던 <code>/tmp/rknn-audit/driving_supercombo_gelu19_imgfp16_fp16.rknn</code>를 기준으로
+          ONNX 전/후와 RKNN 출력 정확도를 확인했습니다. 배포 모델은
+          <code>/home/orangepi/.openpilot/models/driving_supercombo_rk3588.rknn</code>입니다.
+          artifact 교체 때마다 코드 수정이 필요하지 않도록 RKNN SHA 검사는 포팅 코드에서 제거했습니다.
+          대신 wrapper는 파일 존재와 RKNN/OpenCL runtime을 확인하고, <code>modeld</code>는 RKNN input/output attr와 byte-size를 런타임에 검증합니다.
+        </p>
+        <p>
+          정확도 복구에 필요했던 핵심 ONNX rewrite는 두 가지였습니다.
+          첫째, <code>linear_6 -&gt; ReduceL2 -&gt; Div</code>에서 fp16 제곱합 overflow를 피하기 위해
+          <code>sqrt(sum((x / 4)^2)) * 4</code> 형태로 바꿨습니다.
+          둘째, p-branch 음수 <code>GatherND</code>가 RKNN에서 깨져서 의미가 같은
+          <code>Slice(fb_full, axis=1, 16:25)</code>로 바꿨습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">RKNN 정확도 최종 값</div>
+        <p>
+          기존 변환 리포트 기준 최종 FP16 RKNN 후보는 7개 감사 샘플에서 finite output <code>7 / 7</code>,
+          worst cosine <code>0.980182</code>, worst relative MAE <code>0.14816</code>,
+          steady NPU runtime <code>29.83 ms</code>였습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">OpenCL YUV6 warp 추가</div>
+        <p>
+          모델 입력 전처리는 <code>tools/rk3588/opencl_yuv6_warp.cpp</code>와
+          <code>openpilot/selfdrive/modeld/opencl_warp.py</code>를 사용합니다.
+          wrapper가 <code>/home/orangepi/.openpilot/lib/libopencl_yuv6_warp.so</code>를 준비합니다.
+          RGA와 OpenCL 경로의 동치성을 확인한 뒤, 실사용 경로는 직접 OpenCL로 정했습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">UI preview와 overlay 보정</div>
+        <p>
+          webcam intrinsic을 <code>openpilot/common/transformations/camera.py</code>의 webcam config로 고정하고,
+          UI preview와 augmented road overlay가 1280x720 webcam frame을 기준으로 동작하도록 조정했습니다.
+          BIG UI는 <code>BIG=1</code>로 켭니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">메모리 문제 원인 확인: plannerd/pycapnp</div>
+        <p>
+          수동 <code>gc.collect()</code>는 근본 해결이 아니었습니다.
+          comma/TICI 경로와 비교해 보니 RK3588 PC 경로에서 <code>modeld</code>에
+          <code>config_realtime_process(7, 54)</code>를 그대로 적용하면 PSS가 빠르게 GB 단위로 커졌습니다.
+          당시에는 modeld realtime opt-out을 임시 회피로 확인했지만, 최종 원인 확인 뒤 제거했습니다.
+        </p>
+        <p>
+          이후 남은 장시간 memory slope는 <code>modeld</code> realtime 이슈와 별개로,
+          <code>plannerd</code>를 직접 interpreter로 띄운 분리 테스트에서도 재현되었습니다.
+          처음에는 <code>LongitudinalMpc.set_weights()</code> 반복 호출을 의심했지만,
+          <code>LongitudinalMpc</code> 단독 microbench에서는 1000회 반복에도 PSS 증가가 재현되지 않았습니다.
+          이후 더 작은 probe로 실제 원인은 <code>pycapnp 2.2.2</code>가 GC-off 조건에서 capnp schema 객체 순환 참조를 대량 생성하는 문제로 좁혔습니다.
+          보드 venv를 repo pin인 <code>pycapnp 2.1.0</code>으로 맞춘 뒤에는 같은 probe에서 cyclic garbage가 0개였고,
+          <code>realtime.py</code> GC gate 실험은 제거했습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">20 FPS 최적화</div>
+        <p>
+          초기 RKNN 실행은 model period 평균 약 <code>54.1 ms</code>로 20 FPS에 못 미쳤습니다.
+          <code>OPENPILOT_RKNN_CORE_MASK=7</code>이 mask <code>0</code>, <code>3</code>, <code>65535</code>보다 안정적이었고,
+          RKNN input queue를 <code>float16</code>으로 바꿔 매 frame pack cost를 줄였습니다.
+          그 결과 60초 bench에서 model execution p95가 <code>49.436 ms</code>까지 내려갔습니다.
+        </p>
+        <p>
+          이후 modeld/webcamerad만 RK3588 big cores <code>4-7</code>에 두고 UI는 제한하지 않는 affinity를 적용했습니다.
+          5분 bench 기준 road 평균 <code>20.000 FPS</code>, model 평균 <code>19.983 FPS</code>,
+          model execution p95 <code>35.716 ms</code>까지 개선되었습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">메모리 문제 원인 확인: modeld/RKNNLite</div>
+        <p>
+          장시간 BIG UI 실행 중 보드가 멈춘 뒤 재부팅하고 모니터링을 붙여 재현했습니다.
+          처음 10분 run에서는 <code>modeld</code> PSS가 수십 초 안에 GB 단위로 증가했고,
+          UI나 webcamerad가 아니라 <code>modeld</code>가 freeze 원인임을 확인했습니다.
+        </p>
+        <p>
+          <code>rknn-toolkit-lite2</code>의 Python wrapper 경로를 버리고
+          <code>/usr/lib/librknnrt.so</code>를 <code>ctypes</code>로 직접 호출하는
+          <code>openpilot/selfdrive/modeld/rknn_policy.py</code>를 추가했습니다.
+          새 wrapper는 실제 RKNN artifact의 input/output attr를 query해서
+          <code>features_buffer</code>가 <code>1x24x512</code>인 것을 기준으로 맞추고,
+          매 추론마다 output copy 후 <code>rknn_outputs_release()</code>를 항상 호출합니다.
+        </p>
+        <p>
+          같은 모델을 C API 단독 probe로 100회 반복했을 때 PSS가 약 <code>173 MB</code> 근처에서 고정됐고,
+          openpilot 10분 BIG UI full bench에서도 <code>modeld</code> PSS가 plateau를 보였습니다.
+        </p>
+      </li>
+      <li>
+        <div class="title">장시간 안정성 검증</div>
+        <p>
+          <code>MALLOC_ARENA_MAX</code>, <code>MALLOC_TRIM_THRESHOLD_</code>, <code>PYTHONMALLOC=malloc</code>,
+          UI <code>FPS=30</code>은 각각 성능을 떨어뜨리거나 메모리 slope를 충분히 줄이지 못해 기본값으로 채택하지 않았습니다.
+          최종 채택된 방법은 RK3588을 <code>/TICI</code>로 흉내내거나 <code>modeld</code> realtime을 끄는 것이 아니라,
+          보드 dependency를 <code>pycapnp==2.1.0</code>으로 repo pin에 맞추고,
+          RKNN 추론은 직접 C API wrapper로 실행해 output release를 명시하는 것입니다.
+          이 경로에서 10분 BIG UI full bench가 <code>bench_rc=0</code>, <code>metrics_rc=0</code>로 끝났고,
+          최신 run <code>/home/orangepi/rk3588_debug_runs/big_pipeline_20260704_185607</code> 기준 publish period 평균
+          <code>50.000 ms</code>, model execution p95 <code>37.134 ms</code>, frame drop 평균 <code>0.000</code>을 확인했습니다.
+          <code>modeld</code> RSS는 약 <code>531 MB</code>에서 <code>543 MB</code> 범위였고,
+          <code>SHUTTING_DOWN</code> signal handler는 제거해 upstream의 <code>KeyboardInterrupt</code> 종료 경로로 되돌렸습니다.
+        </p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>다음 실행 때 확인할 것</h2>
+    <ol>
+      <li>
+        <strong>먼저 보드 상태 확인:</strong>
+        남은 openpilot 프로세스와 SCons/model temp 파일이 없는지 확인합니다.
+        <pre><code>cd /home/orangepi/openpilot
+pgrep -af '[m]odeld|[w]ebcamerad|[u]i\.ui|[s]oundd|[c]alibrationd|[p]lannerd|[s]cons|compile_modeld' || true
+git status --short -uall
+find tools/rk3588 -maxdepth 2 -type f | sort</code></pre>
+      </li>
+      <li>
+        <strong>환경 출력 확인:</strong>
+        <code>tools/rk3588/run_openpilot_opencl_rknn.sh --print-env</code>에
+        <code>OPENPILOT_RK3588_BIG_CORES=4-7</code>가 포함되어야 합니다.
+        또한 아래 명령이 <code>2.1.0</code>을 출력해야 합니다.
+        <pre><code>./.venv/bin/python -c 'import importlib.metadata as m; print(m.version("pycapnp"))'</code></pre>
+      </li>
+      <li>
+        <strong>정적 검증:</strong>
+        <pre><code>PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -m py_compile \
+  openpilot/selfdrive/modeld/modeld.py \
+  openpilot/selfdrive/modeld/rknn_policy.py \
+  openpilot/selfdrive/modeld/opencl_warp.py \
+  openpilot/common/transformations/camera.py \
+  openpilot/system/camerad/webcam/camera.py \
+  tools/rk3588/run_webcam_bench.py \
+  tools/rk3588/measure_modeld_metrics.py \
+  tools/rk3588/calibrate_webcam_intrinsics.py
+bash -n tools/rk3588/run_openpilot_opencl_rknn.sh
+git diff --check</code></pre>
+      </li>
+      <li>
+        <strong>장시간 재측정 기준:</strong>
+        <code>webcamerad,ui,soundd,modeld,calibrationd,plannerd</code> 전체를 켜고 10분 이상 봅니다.
+        기준값은 model publish period 평균 약 <code>50 ms</code>,
+        model execution p95 약 <code>36 ms</code>,
+        <code>MemAvailable</code> plateau,
+        <code>plannerd</code> PSS 약 <code>50 MB</code> 이하입니다.
+      </li>
+      <li>
+        <strong>실사용 주의:</strong>
+        soundd의 ALSA underrun 경고와 UI의 간헐적 <code>FPS dropped below 60: 53</code> 로그는 10분 검증에서도 보였지만
+        model 20 FPS와 preview/overlay 검증을 막지는 않았습니다.
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>현재 남은 주요 변경 파일과 역할</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>파일</th>
+          <th>역할</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>openpilot/selfdrive/modeld/modeld.py</code></td>
+          <td>RKNN runtime 선택, NPU core mask env, OpenCL warp 입력, float16 RKNN queue.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/selfdrive/modeld/rknn_policy.py</code></td>
+          <td><code>librknnrt.so</code> 직접 C API wrapper. RKNN input/output attr query와 <code>rknn_outputs_release()</code> 보장.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/selfdrive/modeld/opencl_warp.py</code></td>
+          <td>Python ctypes wrapper for OpenCL YUV6 warp library.</td>
+        </tr>
+        <tr>
+          <td><code>tools/rk3588/opencl_yuv6_warp.cpp</code></td>
+          <td>GPU에서 NV12 webcam frame을 모델의 YUV6 입력으로 warp.</td>
+        </tr>
+        <tr>
+          <td><code>tools/rk3588/run_openpilot_opencl_rknn.sh</code></td>
+          <td>실사용 launcher. RKNN/OpenCL/webcam/BIG UI 환경 준비, <code>prebuilt</code> marker 관리, modeld/webcamerad affinity watcher.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/common/transformations/camera.py</code></td>
+          <td>hardcoded webcam intrinsic 및 <code>get_device_camera_config()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/system/camerad/webcam/camera.py</code></td>
+          <td>webcam width/height/fps/fourcc/flip 환경변수.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/selfdrive/ui/onroad/augmented_road_view.py</code></td>
+          <td>BIG UI 경로에서 webcam intrinsic과 frame 크기를 이용한 preview/overlay 좌표 보정.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/selfdrive/ui/onroad/cameraview.py</code></td>
+          <td>BIG UI preview texture update에서 frame data를 <code>memoryview</code>로 처리.</td>
+        </tr>
+        <tr>
+          <td><code>openpilot/system/ui/lib/application.py</code>, <code>openpilot/system/ui/widgets/label.py</code></td>
+          <td>pyray/raygui 버전 차이로 인한 BIG UI style color unsigned 변환 호환성.</td>
+        </tr>
+        <tr>
+          <td><code>tools/rk3588/run_webcam_bench.py</code>, <code>measure_modeld_metrics.py</code>, <code>calibrate_webcam_intrinsics.py</code></td>
+          <td>벤치 실행, modelV2 timing 측정, 독립 OpenCV intrinsic 캘리브레이션.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>TICI 타깃화와 메모리 누수 검토</h2>
+    <p>
+      2026-07-04에 RK3588을 TICI처럼 공식 타깃으로 보이게 만들면 메모리 누수가 없어지는지 검토했습니다.
+      결론은 <strong>/TICI 에뮬레이션은 정답이 아니고, plannerd/GC-off 문제는 보드 venv의 pycapnp 버전을 repo pin과 맞추는 것이 직접 대응한다</strong>입니다.
+      이후 별도로 확인된 <code>modeld</code> freeze 원인은 RKNNLite Python wrapper 쪽이어서,
+      현재는 <code>rknn_policy.py</code>의 직접 C API 경로로 처리합니다.
+    </p>
+    <ul>
+      <li><code>openpilot/common/hardware/__init__.py</code>는 <code>/TICI</code> 파일 존재만으로 <code>TICI=True</code>, <code>PC=False</code>를 결정합니다.</li>
+      <li>TICI로 바꾸면 <code>qcomgpsd</code>, <code>ubloxd</code>, <code>pigeond</code>, <code>modem</code>, <code>sensord</code> 같은 Qualcomm/TICI 전용 경로가 켜집니다. RK3588 보드에는 맞지 않는 방향입니다.</li>
+      <li><code>plannerd</code>는 TICI에서도 동일하게 Python process이고 <code>config_realtime_process()</code>를 탑니다. 따라서 타깃 식별만 바꿔도 GC/pycapnp 누수 조건이 사라지는 구조가 아닙니다.</li>
+      <li>보드 venv는 처음에 <code>pycapnp 2.2.2</code>였지만, repo의 <code>pyproject.toml</code>과 <code>uv.lock</code>은 <code>pycapnp==2.1.0</code>을 고정합니다. 주석에도 <code>2.2 introduces a memory leak due to cyclic references</code>라고 명시되어 있습니다.</li>
+    </ul>
+    <h3>검증 결과</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>조건</th>
+          <th>결과</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>pycapnp 2.2.2</code>, GC off, <code>messaging.new_message(...).to_bytes()</code> 60,000회</td>
+          <td>PSS가 약 20MB에서 1.8GB까지 증가했고, 수동 collect 시 <code>capnp.lib.capnp._StructSchemaField</code> 중심의 cyclic garbage 약 924만 개가 확인되었습니다.</td>
+        </tr>
+        <tr>
+          <td><code>pycapnp 2.2.2</code>, GC on, 같은 probe</td>
+          <td>PSS가 약 22MB 수준에서 plateau를 보였습니다. 즉 수동 <code>gc.collect()</code> 문제가 아니라 GC disabled 조건에서 pycapnp 2.2 순환 객체가 누적되는 문제입니다.</td>
+        </tr>
+        <tr>
+          <td><code>pycapnp 2.1.0</code>, GC off, 같은 probe</td>
+          <td>PSS가 약 23.9MB로 고정됐고, <code>gc.collect()</code> 결과 cyclic garbage가 0개였습니다.</td>
+        </tr>
+        <tr>
+          <td><code>pycapnp 2.1.0</code>, GC off, RKNN/OpenCL bench</td>
+          <td><code>webcamerad,modeld,calibrationd,plannerd</code> bench가 exit 0. 정리 전 확인에서는 <code>plannerd</code> PSS가 약 29.9MB에서 34.3MB까지의 작은 초기 증가만 보였고, hardcoded intrinsic 전환 후 35초 smoke에서는 model execution 평균 <code>33.096 ms</code>, publish period 평균 <code>50.007 ms</code>, frame drop <code>0</code>이었습니다.</td>
+        </tr>
+        <tr>
+          <td>직접 RKNN C API wrapper, 10분 BIG UI bench</td>
+          <td><code>bench_rc=0</code>, <code>metrics_rc=0</code>. <code>modeld</code> PSS plateau, model execution 평균 <code>34.839 ms</code>, publish period 평균 <code>50.000 ms</code>, frame drop <code>0</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      이 검토 이후 보드 venv는 <code>pycapnp==2.1.0</code>으로 맞췄고,
+      <code>openpilot/common/realtime.py</code>의 GC opt-in 실험 패치, wrapper의 GC 관련 실험 export,
+      <code>modeld</code> realtime opt-out env, bench runner의 legacy Params monkeypatch를 제거했습니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>현재 git 상태 기준</h2>
+    <p>
+      이 문서를 갱신할 때 보드의 source status에는 아래 포팅 관련 파일들이 남아 있었습니다.
+      최종 커밋 전에는 한 번 더 <code>git diff</code>로 불필요한 실험 흔적이 없는지 확인해야 합니다.
+    </p>
+    <pre><code>M  openpilot/common/transformations/camera.py
+M  openpilot/selfdrive/modeld/modeld.py
+M  openpilot/selfdrive/ui/onroad/augmented_road_view.py
+M  openpilot/selfdrive/ui/onroad/cameraview.py
+M  openpilot/system/camerad/webcam/camera.py
+M  openpilot/system/ui/lib/application.py
+?? openpilot/selfdrive/modeld/opencl_warp.py
+?? openpilot/selfdrive/modeld/rknn_policy.py
+?? tools/rk3588/calibrate_webcam_intrinsics.py
+?? tools/rk3588/measure_modeld_metrics.py
+?? tools/rk3588/opencl_yuv6_warp.cpp
+?? tools/rk3588/rk3588_porting_history_ko.html
+?? tools/rk3588/run_openpilot_opencl_rknn.sh
+?? tools/rk3588/run_webcam_bench.py</code></pre>
+  </section>
+
+  <section>
+    <h2>다시 하지 말 것</h2>
+    <div class="callout warn">
+      <ul>
+        <li><code>big_driving_supercombo.onnx</code>는 이 포팅 경로에서 사용하지 않습니다.</li>
+        <li>tinygrad CL 실험 경로는 현재 실사용 경로가 아닙니다. 직접 OpenCL warp + RKNN을 사용합니다.</li>
+        <li>메모리 문제를 수동 <code>gc.collect()</code>로 덮지 않습니다. 보드 venv의 <code>pycapnp</code>는 repo pin인 <code>2.1.0</code>으로 유지합니다.</li>
+        <li><code>prebuilt</code> marker를 쓰레기 파일로 보고 지우지 않습니다. wrapper가 전체 SCons 빌드를 피하기 위해 관리합니다.</li>
+        <li>문제 해결을 위해 controlsd, panda safety, car interface를 건드리지 않습니다. 현재 작업은 runtime/bench/vision/modeld/UI preview 포팅 범위입니다.</li>
+        <li>검증 후에는 <code>PYTHONDONTWRITEBYTECODE=1</code>을 쓰거나 <code>__pycache__</code>를 정리하고 상태를 다시 봅니다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>최종 확인 커맨드</h2>
+    <pre><code>cd /home/orangepi/openpilot
+git status --short -uall
+git diff --check
+PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -m py_compile \
+  openpilot/selfdrive/modeld/modeld.py \
+  openpilot/selfdrive/modeld/rknn_policy.py \
+  openpilot/selfdrive/modeld/opencl_warp.py \
+  openpilot/common/transformations/camera.py \
+  openpilot/system/camerad/webcam/camera.py \
+  tools/rk3588/run_webcam_bench.py \
+  tools/rk3588/measure_modeld_metrics.py \
+  tools/rk3588/calibrate_webcam_intrinsics.py
+bash -n tools/rk3588/run_openpilot_opencl_rknn.sh
+grep -RInE 'MODELD_TIMING|rk3588_.*timing|gc\.collect|malloc_trim|OPENPILOT_.*GC|breakpoint\(' \
+  openpilot/selfdrive/modeld tools/rk3588 openpilot/system/camerad/webcam openpilot/common/transformations || true</code></pre>
+    <p class="small">
+      검증 로그와 socket 흔적은 주로 <code>/tmp/rk3588*</code>에 쌓입니다.
+      최종 커밋이나 장시간 테스트 전에는 필요한 결과만 보존하고 임시 로그를 정리합니다.
+    </p>
+  </section>
+</main>
+</body>
+</html>

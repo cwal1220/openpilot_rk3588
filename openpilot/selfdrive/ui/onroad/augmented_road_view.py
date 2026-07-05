@@ -174,14 +174,17 @@ class AugmentedRoadView(CameraView):
     x, y = self._content_rect.x, self._content_rect.y
     w, h = self._content_rect.width, self._content_rect.height
     cx, cy = intrinsic[0, 2], intrinsic[1, 2]
+    frame_width, frame_height = intrinsic[0, 2] * 2, intrinsic[1, 2] * 2
+    if self.frame is not None:
+      frame_width, frame_height = self.frame.width, self.frame.height
 
     # Ensure zoom views the whole area
-    zoom = max(zoom, w / (2 * cx), h / (2 * cy))
+    zoom = max(zoom, w / frame_width, h / frame_height)
 
     # Calculate max allowed offsets with margins
     margin = 5
-    max_x_offset = max(0.0, cx * zoom - w / 2 - margin)
-    max_y_offset = max(0.0, cy * zoom - h / 2 - margin)
+    max_x_offset = max(0.0, frame_width * zoom / 2 - w / 2 - margin)
+    max_y_offset = max(0.0, frame_height * zoom / 2 - h / 2 - margin)
 
     # Calculate and clamp offsets to prevent out-of-bounds issues
     try:
@@ -196,8 +199,8 @@ class AugmentedRoadView(CameraView):
     # Cache the computed transformation matrix to avoid recalculations
     self._matrix_cache_key = cache_key
     self._cached_matrix = np.array([
-      [zoom * 2 * cx / w, 0, -x_offset / w * 2],
-      [0, zoom * 2 * cy / h, -y_offset / h * 2],
+      [zoom * frame_width / w, 0, 2 * (zoom * (frame_width / 2 - cx) - x_offset) / w],
+      [0, zoom * frame_height / h, 2 * (zoom * (frame_height / 2 - cy) - y_offset) / h],
       [0, 0, 1.0]
     ])
 

@@ -1,4 +1,5 @@
 import itertools
+import os
 import numpy as np
 from dataclasses import dataclass
 
@@ -35,6 +36,18 @@ class _NoneCameraConfig(CameraConfig):
   height: int = 0
   focal_length: float = 0
 
+
+@dataclass(frozen=True)
+class _WebcamCameraConfig(CameraConfig):
+  @property
+  def intrinsics(self):
+    return np.array([
+      [972.529486,   0.0, 695.545910],
+      [0.0, 949.860567, 445.315425],
+      [0.0,   0.0,   1.0],
+    ])
+
+
 @dataclass(frozen=True)
 class DeviceCameraConfig:
   fcam: CameraConfig
@@ -51,6 +64,8 @@ _os_fisheye = CameraConfig(2688 // 2, 1520 // 2, 567.0 / 4 * 3)
 _ar_ox_config = DeviceCameraConfig(CameraConfig(1928, 1208, 2648.0), _ar_ox_fisheye, _ar_ox_fisheye)
 _os_config = DeviceCameraConfig(CameraConfig(2688 // 2, 1520 // 2, 1522.0 * 3 / 4), _os_fisheye, _os_fisheye)
 _neo_config = DeviceCameraConfig(CameraConfig(1164, 874, 910.0), CameraConfig(816, 612, 650.0), _NoneCameraConfig())
+_webcam_config = _WebcamCameraConfig(1280, 720, 961.1950265)
+_webcam_device_config = DeviceCameraConfig(_webcam_config, _NoneCameraConfig(), _webcam_config)
 
 DEVICE_CAMERAS = {
   # A "device camera" is defined by a device type and sensor
@@ -65,7 +80,7 @@ DEVICE_CAMERAS = {
   ("unknown", "ox03c10"): _ar_ox_config,
 
   # simulator (emulates a tici)
-  ("pc", "unknown"): _ar_ox_config,
+  ("pc", "unknown"): _webcam_device_config if os.getenv("USE_WEBCAM") == "1" else _ar_ox_config,
 }
 prods = itertools.product(('tici', 'tizi', 'mici'), (('ar0231', _ar_ox_config), ('ox03c10', _ar_ox_config), ('os04c10', _os_config)))
 DEVICE_CAMERAS.update({(d, c[0]): c[1] for d, c in prods})

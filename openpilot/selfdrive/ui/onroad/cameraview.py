@@ -264,8 +264,9 @@ class CameraView(Widget):
 
     # Update textures with new frame data
     if self._texture_needs_update:
-      y_data = self.frame.data[: self.frame.uv_offset]
-      uv_data = self.frame.data[self.frame.uv_offset:]
+      frame_data = memoryview(self.frame.data)
+      y_data = frame_data[: self.frame.uv_offset]
+      uv_data = frame_data[self.frame.uv_offset:]
 
       rl.update_texture(self.texture_y, rl.ffi.cast("void *", rl.ffi.from_buffer(y_data)))
       rl.update_texture(self.texture_uv, rl.ffi.cast("void *", rl.ffi.from_buffer(uv_data)))

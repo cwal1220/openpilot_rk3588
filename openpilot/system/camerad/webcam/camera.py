@@ -1,3 +1,5 @@
+import os
+
 import av
 import cv2 as cv
 
@@ -15,6 +17,9 @@ class Camera:
 
     self.cap = cv.VideoCapture(camera_id)
 
+    fourcc = os.getenv("WEBCAM_FOURCC", "").strip()
+    if len(fourcc) == 4:
+      self.cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*fourcc))
     self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 1280.0)
     self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 720.0)
     self.cap.set(cv.CAP_PROP_FPS, 25.0)

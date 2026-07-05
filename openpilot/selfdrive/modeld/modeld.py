@@ -25,9 +25,13 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_drivi
 from openpilot.common.file_chunker import open_file_chunked, get_manifest_path
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices, load_oob
+import openpilot.selfdrive.modeld.rknn_policy as rknn_policy
 
 PROCESS_NAME = "openpilot.selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
+USE_RKNN = os.getenv("OPENPILOT_MODELD_RKNN") == "1"
+USE_OPENCL_WARP = os.getenv("OPENPILOT_MODELD_OPENCL_WARP") == "1"
+RKNN_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models/driving_supercombo_rk3588.rknn")
 
 LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
@@ -87,23 +91,68 @@ class ModelState:
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
 
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
-    self.input_queues, self.npy = make_input_queues(self.input_shapes, self.frame_skip, device=self.QUEUE_DEV)
+    self.rknn_policy = rknn_policy.RknnPolicy(RKNN_MODEL_PATH) if USE_RKNN else None
+    rknn_input_shapes = self.rknn_policy.input_shapes if self.rknn_policy is not None else self.input_shapes
+    if USE_RKNN and USE_OPENCL_WARP:
+      self.input_queues = {}
+      self.npy = rknn_policy.make_rknn_runtime_state({**rknn_input_shapes, 'action_t': self.input_shapes['action_t']})
+    else:
+      self.input_queues, self.npy = make_input_queues(self.input_shapes, self.frame_skip, device=self.QUEUE_DEV)
+    if USE_RKNN:
+      rknn_queue_shapes = {**rknn_input_shapes, 'img': self.input_shapes['img'], 'big_img': self.input_shapes['big_img']}
+      self.rknn_input_queues = rknn_policy.make_rknn_input_queues(rknn_queue_shapes, self.frame_skip)
+      self.rknn_inputs = rknn_policy.make_rknn_inputs(rknn_input_shapes)
+    else:
+      self.rknn_input_queues = {}
+      self.rknn_inputs = {}
     self.full_frames: dict[str, Tensor] = {}
-    self._blob_cache: dict[int, Tensor] = {}
+    self.raw_frames: dict[str, np.ndarray] = {}
+    self._blob_cache: dict[tuple[str, int], Tensor] = {}
     self.parser = Parser()
     self.frame_buf_params = {k: get_nv12_info(cam_w, cam_h) for k in ('img', 'big_img')}
-    self.run_policy = jits['run_policy']
-    self.warp = jits[(cam_w,cam_h)]
+    self.run_policy = None if USE_RKNN else jits['run_policy']
+    self.opencl_warp = None
+    if USE_OPENCL_WARP:
+      from openpilot.selfdrive.modeld.opencl_warp import OpenClWarpConfig, OpenClYuv6Warp
+      img_shape = self.input_shapes['img']
+      self.opencl_warp = OpenClYuv6Warp(OpenClWarpConfig(cam_w, cam_h, img_shape[3] * 2, img_shape[2] * 2))
+    self.warp = None if USE_OPENCL_WARP else jits[(cam_w,cam_h)]
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
     return parsed_model_outputs
 
+  def run_rknn_policy(self, warped: Tensor | np.ndarray) -> np.ndarray:
+    warped_np = (warped if isinstance(warped, np.ndarray) else warped.numpy()).astype(np.uint8, copy=False)
+    rknn_policy.shift_queue(self.rknn_input_queues['img_q'], warped_np[0:1])
+    rknn_policy.shift_queue(self.rknn_input_queues['big_img_q'], warped_np[1:2])
+    rknn_policy.shift_queue(self.rknn_input_queues['desire_q'], self.npy['desire'].reshape(1, 1, -1))
+    rknn_policy.shift_queue(self.rknn_input_queues['feat_q'], self.npy['prev_feat'].reshape(1, 1, -1))
+
+    img = rknn_policy.copy_sample_skip_np(self.rknn_input_queues['img_q'], self.frame_skip, self.rknn_inputs['img'])
+    big_img = rknn_policy.copy_sample_skip_np(self.rknn_input_queues['big_img_q'], self.frame_skip, self.rknn_inputs['big_img'])
+    features_buffer = rknn_policy.copy_sample_skip_np(self.rknn_input_queues['feat_q'], self.frame_skip, self.rknn_inputs['features_buffer'])
+    desire_pulse = rknn_policy.copy_desire_np(self.rknn_input_queues['desire_q'], self.frame_skip, self.rknn_inputs['desire_pulse'])
+    traffic_convention = self.rknn_inputs['traffic_convention']
+    np.copyto(traffic_convention, self.npy['traffic_convention'], casting="unsafe")
+    assert self.rknn_policy is not None
+    model_output = self.rknn_policy.run({
+      'img': img,
+      'big_img': big_img,
+      'features_buffer': features_buffer,
+      'desire_pulse': desire_pulse,
+      'traffic_convention': traffic_convention,
+    })
+    return model_output
+
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
           inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
     for key in bufs.keys():
-      ptr = np.frombuffer(bufs[key].data, dtype=np.uint8).ctypes.data
       yuv_size = self.frame_buf_params[key][3]
+      if self.opencl_warp is not None:
+        self.raw_frames[key] = np.frombuffer(bufs[key].data, dtype=np.uint8)
+        continue
+      ptr = np.frombuffer(bufs[key].data, dtype=np.uint8).ctypes.data
       # There is a ringbuffer of imgs, just cache tensors pointing to all of them
       cache_key = (key, ptr)
       if cache_key not in self._blob_cache:
@@ -119,12 +168,25 @@ class ModelState:
     self.npy['tfm'][:,:] = transforms['img'][:,:]
     self.npy['big_tfm'][:,:] = transforms['big_img'][:,:]
 
-    warped = self.warp(**{k: self.input_queues[k] for k in WARP_INPUTS}, frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
+    if self.opencl_warp is not None:
+      warped = self.opencl_warp.warp_pair(
+        (self.raw_frames['img'], self.raw_frames['big_img']),
+        (transforms['img'], transforms['big_img']),
+      )
+    else:
+      assert self.warp is not None
+      warped = self.warp(**{k: self.input_queues[k] for k in WARP_INPUTS}, frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
 
-    outs, = self.run_policy(
-      **{k: self.input_queues[k] for k in POLICY_INPUTS if k in self.input_queues}, warped=warped
-    )
-    model_output = outs.numpy()[0]
+    if self.rknn_policy is not None:
+      model_output = self.run_rknn_policy(warped)
+    else:
+      assert self.run_policy is not None
+      if isinstance(warped, np.ndarray):
+        warped = Tensor(warped, device=self.WARP_DEV).contiguous().realize()
+      outs, = self.run_policy(
+        **{k: self.input_queues[k] for k in POLICY_INPUTS if k in self.input_queues}, warped=warped
+      )
+      model_output = outs.numpy()[0]
     outputs_dict = self.parser.parse_outputs(self.slice_outputs(model_output, self.output_slices))
     self.npy['prev_feat'][:] = model_output[self.output_slices['hidden_state']]
 
