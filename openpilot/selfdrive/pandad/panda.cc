@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <cassert>
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -11,12 +12,76 @@
 #include "common/util.h"
 
 const bool PANDAD_MAXOUT = getenv("PANDAD_MAXOUT") != nullptr;
+const int LEGACY_CANPACKET_HEAD_SIZE = 5;
+const int LEGACY_CANPACKET_REJECTED = 0xC0U;
+const int LEGACY_CANPACKET_RETURNED = 0x80U;
+
+struct __attribute__((packed)) legacy_can_header {
+  uint8_t reserved : 1;
+  uint8_t bus : 3;
+  uint8_t data_len_code : 4;
+  uint8_t rejected : 1;
+  uint8_t returned : 1;
+  uint8_t extended : 1;
+  uint32_t addr : 29;
+};
+
+struct __attribute__((packed)) legacy_health_t {
+  uint32_t uptime_pkt;
+  uint32_t voltage_pkt;
+  uint32_t current_pkt;
+  uint32_t can_rx_errs_pkt;
+  uint32_t can_send_errs_pkt;
+  uint32_t can_fwd_errs_pkt;
+  uint32_t gmlan_send_errs_pkt;
+  uint32_t faults_pkt;
+  uint8_t ignition_line_pkt;
+  uint8_t ignition_can_pkt;
+  uint8_t controls_allowed_pkt;
+  uint8_t gas_interceptor_detected_pkt;
+  uint8_t car_harness_status_pkt;
+  uint8_t usb_power_mode_pkt;
+  uint8_t safety_mode_pkt;
+  uint16_t safety_param_pkt;
+  uint8_t fault_status_pkt;
+  uint8_t power_save_enabled_pkt;
+  uint8_t heartbeat_lost_pkt;
+  uint16_t alternative_experience_pkt;
+  uint32_t blocked_msg_cnt_pkt;
+  float interrupt_load_pkt;
+};
+
+static bool legacy_panda_type(cereal::PandaState::PandaType hw_type) {
+  return hw_type == cereal::PandaState::PandaType::WHITE_PANDA ||
+         hw_type == cereal::PandaState::PandaType::GREY_PANDA ||
+         hw_type == cereal::PandaState::PandaType::BLACK_PANDA ||
+         hw_type == cereal::PandaState::PandaType::UNO ||
+         hw_type == cereal::PandaState::PandaType::DOS;
+}
 
 Panda::Panda(std::string serial) {
-  handle = std::make_unique<PandaSpiHandle>(serial);
-  LOGW("connected to %s over SPI", serial.c_str());
+  const auto usb_serials = PandaUsbHandle::list();
+  const bool serial_matches_usb = std::find(usb_serials.begin(), usb_serials.end(), serial) != usb_serials.end();
+  bool connected_usb = false;
+
+  if (!serial.empty() && serial_matches_usb) {
+    handle = std::make_unique<PandaUsbHandle>(serial);
+    connected_usb = true;
+  } else {
+    try {
+      handle = std::make_unique<PandaSpiHandle>(serial);
+    } catch (const std::exception &) {
+      if (usb_serials.empty()) {
+        throw;
+      }
+      handle = std::make_unique<PandaUsbHandle>(serial);
+      connected_usb = true;
+    }
+  }
+  LOGW("connected to %s over %s", handle->hw_serial.c_str(), connected_usb ? "USB" : "SPI");
 
   hw_type = get_hw_type();
+  legacy_usb_can = connected_usb && legacy_panda_type(hw_type);
   can_reset_communications();
 }
 
@@ -33,7 +98,10 @@ std::string Panda::hw_serial() {
 }
 
 std::vector<std::string> Panda::list() {
-  return PandaSpiHandle::list();
+  std::vector<std::string> ret = PandaSpiHandle::list();
+  const auto usb_serials = PandaUsbHandle::list();
+  ret.insert(ret.end(), usb_serials.begin(), usb_serials.end());
+  return ret;
 }
 
 void Panda::set_safety_model(cereal::CarParams::SafetyModel safety_model, uint16_t safety_param) {
@@ -85,12 +153,48 @@ void Panda::set_ir_pwr(uint16_t ir_pwr) {
 }
 
 std::optional<health_t> Panda::get_state() {
+  if (legacy_usb_can) {
+    legacy_health_t legacy_health {};
+    int err = handle->control_read(0xd2, 0, 0, (unsigned char*)&legacy_health, sizeof(legacy_health));
+    if (err < 0) {
+      return std::nullopt;
+    }
+
+    health_t health {};
+    health.uptime_pkt = legacy_health.uptime_pkt;
+    health.voltage_pkt = legacy_health.voltage_pkt;
+    health.current_pkt = legacy_health.current_pkt;
+    health.safety_tx_blocked_pkt = legacy_health.blocked_msg_cnt_pkt;
+    health.safety_rx_invalid_pkt = legacy_health.can_rx_errs_pkt;
+    health.tx_buffer_overflow_pkt = legacy_health.can_send_errs_pkt;
+    health.rx_buffer_overflow_pkt = legacy_health.can_rx_errs_pkt;
+    health.faults_pkt = legacy_health.faults_pkt;
+    health.ignition_line_pkt = legacy_health.ignition_line_pkt;
+    health.ignition_can_pkt = legacy_health.ignition_can_pkt;
+    health.controls_allowed_pkt = legacy_health.controls_allowed_pkt;
+    health.car_harness_status_pkt = legacy_health.car_harness_status_pkt;
+    health.safety_mode_pkt = legacy_health.safety_mode_pkt;
+    health.safety_param_pkt = legacy_health.safety_param_pkt;
+    health.fault_status_pkt = legacy_health.fault_status_pkt;
+    health.power_save_enabled_pkt = legacy_health.power_save_enabled_pkt;
+    health.heartbeat_lost_pkt = legacy_health.heartbeat_lost_pkt;
+    health.alternative_experience_pkt = legacy_health.alternative_experience_pkt;
+    health.interrupt_load_pkt = legacy_health.interrupt_load_pkt;
+    return health;
+  }
+
   health_t health {0};
   int err = handle->control_read(0xd2, 0, 0, (unsigned char*)&health, sizeof(health));
   return err >= 0 ? std::make_optional(health) : std::nullopt;
 }
 
 std::optional<can_health_t> Panda::get_can_state(uint16_t can_number) {
+  if (legacy_usb_can) {
+    can_health_t can_health {};
+    can_health.can_speed = 500;
+    return can_health;
+  }
+
   can_health_t can_health {0};
   int err = handle->control_read(0xc2, can_number, 0, (unsigned char*)&can_health, sizeof(can_health));
   return err >= 0 ? std::make_optional(can_health) : std::nullopt;
@@ -181,6 +285,34 @@ void Panda::pack_can_buffer(const capnp::List<cereal::CanData>::Reader &can_data
     assert(can_data.size() <= 64);
     assert(can_data.size() == dlc_to_len[data_len_code]);
 
+    if (legacy_usb_can) {
+      legacy_can_header header = {};
+      header.addr = cmsg.getAddress();
+      header.extended = (cmsg.getAddress() >= 0x800) ? 1 : 0;
+      header.data_len_code = data_len_code;
+      header.bus = bus;
+
+      for (int i = 0; i < LEGACY_CANPACKET_HEAD_SIZE; ++i, ++pos) {
+        if (pos % USBPACKET_MAX_SIZE == 0) {
+          send_buf[pos] = pos / USBPACKET_MAX_SIZE;
+          pos++;
+        }
+        send_buf[pos] = ((uint8_t *)&header)[i];
+      }
+      for (int i = 0; i < can_data.size(); ++i, ++pos) {
+        if (pos % USBPACKET_MAX_SIZE == 0) {
+          send_buf[pos] = pos / USBPACKET_MAX_SIZE;
+          pos++;
+        }
+        send_buf[pos] = can_data[i];
+      }
+      if (pos >= USB_TX_SOFT_LIMIT) {
+        write_func(send_buf, pos);
+        pos = 0;
+      }
+      continue;
+    }
+
     can_header header = {};
     header.addr = cmsg.getAddress();
     header.extended = (cmsg.getAddress() >= 0x800) ? 1 : 0;
@@ -214,6 +346,18 @@ void Panda::can_send(const capnp::List<cereal::CanData>::Reader &can_data_list) 
 }
 
 bool Panda::can_receive(std::vector<can_frame>& out_vec) {
+  if (legacy_usb_can) {
+    uint8_t data[RECV_SIZE];
+    int recv = handle->bulk_read(0x81, data, RECV_SIZE);
+    if (!comms_healthy()) {
+      return false;
+    }
+    if (recv == RECV_SIZE) {
+      LOGW("Panda receive buffer full");
+    }
+    return recv <= 0 ? true : unpack_legacy_usb_can_buffer(data, recv, out_vec);
+  }
+
   // Check if enough space left in buffer to store RECV_SIZE data
   assert(receive_buffer_size + RECV_SIZE <= sizeof(receive_buffer));
 
@@ -237,6 +381,44 @@ bool Panda::can_receive(std::vector<can_frame>& out_vec) {
 
 void Panda::can_reset_communications() {
   handle->control_write(0xc0, 0, 0);
+}
+
+bool Panda::unpack_legacy_usb_can_buffer(uint8_t *data, int size, std::vector<can_frame> &out_vec) {
+  std::vector<uint8_t> recv_buf;
+  for (int i = 0; i < size; i += USBPACKET_MAX_SIZE) {
+    if (data[i] != i / USBPACKET_MAX_SIZE) {
+      LOGE("CAN: malformed legacy USB receive packet");
+      handle->comms_healthy = false;
+      return false;
+    }
+    const int chunk_len = std::min(USBPACKET_MAX_SIZE, size - i);
+    recv_buf.insert(recv_buf.end(), &data[i + 1], &data[i + chunk_len]);
+  }
+
+  int pos = 0;
+  while (pos + LEGACY_CANPACKET_HEAD_SIZE <= recv_buf.size()) {
+    legacy_can_header header = {};
+    memcpy(&header, &recv_buf[pos], LEGACY_CANPACKET_HEAD_SIZE);
+
+    const uint8_t data_len = dlc_to_len[header.data_len_code];
+    if (pos + LEGACY_CANPACKET_HEAD_SIZE + data_len > recv_buf.size()) {
+      break;
+    }
+
+    can_frame &can_data = out_vec.emplace_back();
+    can_data.address = header.addr;
+    can_data.src = header.bus;
+    if (header.rejected) {
+      can_data.src += LEGACY_CANPACKET_REJECTED;
+    }
+    if (header.returned) {
+      can_data.src += LEGACY_CANPACKET_RETURNED;
+    }
+    can_data.dat.assign((char *)&recv_buf[pos + LEGACY_CANPACKET_HEAD_SIZE], data_len);
+
+    pos += LEGACY_CANPACKET_HEAD_SIZE + data_len;
+  }
+  return true;
 }
 
 bool Panda::unpack_can_buffer(uint8_t *data, uint32_t &size, std::vector<can_frame> &out_vec) {

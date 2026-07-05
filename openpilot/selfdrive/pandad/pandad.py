@@ -12,13 +12,24 @@ from openpilot.common.params import Params
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
 
+LEGACY_USB_PANDA_TYPES = {b"\x01", b"\x02", b"\x03", b"\x05", b"\x06"}
+
+
+def is_legacy_usb_panda(panda: Panda) -> bool:
+  return bytes(panda.get_type()) in LEGACY_USB_PANDA_TYPES
+
 
 def get_expected_signature() -> bytes:
   fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
   return Panda.get_signature_from_firmware(fn)
 
-def flash_panda(panda_serial: str):
+def flash_panda(panda_serial: str) -> bool:
   panda = Panda(panda_serial)
+  if is_legacy_usb_panda(panda):
+    cloudlog.warning(f"Legacy USB panda {panda_serial} detected, skipping firmware update")
+    panda.close()
+    return True
+
   fw_signature = get_expected_signature()
   internal_panda = panda.is_internal()
 
@@ -49,6 +60,7 @@ def flash_panda(panda_serial: str):
     raise AssertionError
 
   panda.close()
+  return False
 
 
 def main() -> None:
@@ -68,6 +80,8 @@ def main() -> None:
   try:
     for s in Panda.list():
       with Panda(s) as p:
+        if is_legacy_usb_panda(p):
+          continue
         health = p.health()
         if p.is_internal() and health["heartbeat_lost"]:
           Params().put_bool("PandaHeartbeatLost", True, block=True)
@@ -95,11 +109,14 @@ def main() -> None:
       if len(panda_serials):
         assert len(panda_serials) == 1
         cloudlog.info(f"{len(panda_serials)} panda found, connecting - {panda_serials}")
-        flash_panda(panda_serials[0])
+        skip_fw_check = flash_panda(panda_serials[0])
 
         # run real pandad
         os.environ['MANAGER_DAEMON'] = 'pandad'
-        process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"))
+        env = os.environ.copy()
+        if skip_fw_check:
+          env["BOARDD_SKIP_FW_CHECK"] = "1"
+        process = subprocess.Popen(["./pandad"], cwd=os.path.join(BASEDIR, "openpilot/selfdrive/pandad"), env=env)
         process.wait()
     # TODO: wrap all panda exceptions in a base panda exception
     except (usb1.USBErrorNoDevice, usb1.USBErrorPipe):
