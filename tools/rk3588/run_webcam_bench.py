@@ -137,8 +137,8 @@ def build_messages(CP, speed: float):
   from openpilot.common.hardware import HARDWARE
   from opendbc.car.structs import car
 
-  msgs = {service: messaging.new_message(service) for service in PUBLISH_SERVICES if service != "pandaStates"}
-  msgs["pandaStates"] = messaging.new_message("pandaStates", 1)
+  msgs = {service: messaging.new_message(service, valid=True) for service in PUBLISH_SERVICES if service != "pandaStates"}
+  msgs["pandaStates"] = messaging.new_message("pandaStates", 1, valid=True)
 
   msgs["deviceState"].deviceState.started = True
   msgs["deviceState"].deviceState.deviceType = HARDWARE.get_device_type()
@@ -198,7 +198,7 @@ def publish_messages(pm, msgs, managed_processes, process_names: tuple[str, ...]
   from openpilot.cereal import messaging
 
   manager_states = [managed_processes[name].get_process_state_msg() for name in process_names]
-  msgs["managerState"] = messaging.new_message("managerState")
+  msgs["managerState"] = messaging.new_message("managerState", valid=True)
   msgs["managerState"].managerState.processes = manager_states
   for service in PUBLISH_SERVICES:
     msg = msgs[service]

@@ -25,9 +25,7 @@ done
 
 ensure_prebuilt_marker() {
   # Required because the stock launcher runs a full SCons build without this marker.
-  if [ ! -e "${ROOT_DIR}/prebuilt" ]; then
-    : > "${ROOT_DIR}/prebuilt"
-  fi
+  [ -e "${ROOT_DIR}/prebuilt" ] || : > "${ROOT_DIR}/prebuilt"
 }
 
 apply_runtime_affinity_once() {
@@ -94,6 +92,7 @@ PY
 fi
 
 export USE_WEBCAM="${USE_WEBCAM:-1}"
+export BIG="${BIG:-1}"
 export ROAD_CAM="${ROAD_CAM:-0}"
 export WEBCAM_FOURCC="${WEBCAM_FOURCC:-MJPG}"
 export OPENPILOT_MODELD_RKNN="${OPENPILOT_MODELD_RKNN:-1}"
@@ -103,22 +102,17 @@ export OPENPILOT_RK3588_BIG_CORES="${OPENPILOT_RK3588_BIG_CORES:-4-7}"
 export OPENPILOT_OPENCL_WARP_LIB="$OPENCL_WARP_LIB"
 
 if [ "$print_env" -eq 1 ]; then
-  printf 'export USE_WEBCAM=%q\n' "$USE_WEBCAM"
-  printf 'export ROAD_CAM=%q\n' "$ROAD_CAM"
-  printf 'export WEBCAM_FOURCC=%q\n' "$WEBCAM_FOURCC"
-  printf 'export OPENPILOT_MODELD_RKNN=%q\n' "$OPENPILOT_MODELD_RKNN"
-  printf 'export OPENPILOT_MODELD_OPENCL_WARP=%q\n' "$OPENPILOT_MODELD_OPENCL_WARP"
-  printf 'export OPENPILOT_RK3588_AFFINITY=%q\n' "$OPENPILOT_RK3588_AFFINITY"
-  printf 'export OPENPILOT_RK3588_BIG_CORES=%q\n' "$OPENPILOT_RK3588_BIG_CORES"
-  printf 'export OPENPILOT_OPENCL_WARP_LIB=%q\n' "$OPENPILOT_OPENCL_WARP_LIB"
+  for var in USE_WEBCAM BIG ROAD_CAM WEBCAM_FOURCC OPENPILOT_MODELD_RKNN \
+             OPENPILOT_MODELD_OPENCL_WARP OPENPILOT_RK3588_AFFINITY \
+             OPENPILOT_RK3588_BIG_CORES OPENPILOT_OPENCL_WARP_LIB; do
+    printf 'export %s=%q\n' "$var" "${!var}"
+  done
 fi
 
 if [ "$prepare_only" -eq 1 ]; then
   ensure_prebuilt_marker
   exit 0
-fi
-
-if [ "$print_env" -eq 1 ]; then
+elif [ "$print_env" -eq 1 ]; then
   exit 0
 fi
 
