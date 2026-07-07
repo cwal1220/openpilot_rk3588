@@ -146,6 +146,7 @@ class RknnPolicy:
     extra_inputs = set(self.input_shapes) - set(RKNN_INPUT_NAMES)
     if extra_inputs:
       raise RuntimeError(f"Unexpected RKNN metadata inputs: {sorted(extra_inputs)}")
+    self._output_buffers = [np.empty((attr.n_elems,), dtype=np.float16) for attr in self.output_attrs]
 
   def _configure_api(self) -> None:
     self._lib.rknn_init.argtypes = [C.POINTER(C.c_uint64), C.c_void_p, C.c_uint32, C.c_uint32, C.c_void_p]
@@ -195,7 +196,7 @@ class RknnPolicy:
       c_inputs[i].index = attr.index
       c_inputs[i].buf = C.c_void_p(value.ctypes.data)
       c_inputs[i].size = value.nbytes
-      c_inputs[i].pass_through = 0
+      c_inputs[i].pass_through = 1
       c_inputs[i].type = attr.type
       c_inputs[i].fmt = attr.fmt
 
@@ -203,15 +204,14 @@ class RknnPolicy:
     self._check(self._lib.rknn_run(self._ctx.value, None), "rknn_run")
     outputs = (RknnOutput * len(self.output_attrs))()
     for i, attr in enumerate(self.output_attrs):
-      outputs[i].want_float = 1
-      outputs[i].is_prealloc = 0
+      outputs[i].want_float = 0
+      outputs[i].is_prealloc = 1
       outputs[i].index = attr.index
+      outputs[i].buf = C.c_void_p(self._output_buffers[i].ctypes.data)
+      outputs[i].size = self._output_buffers[i].nbytes
     self._check(self._lib.rknn_outputs_get(self._ctx.value, len(outputs), outputs, None), "rknn_outputs_get")
     try:
-      if outputs[0].size % np.dtype(np.float32).itemsize != 0:
-        raise RuntimeError(f"Unexpected RKNN output byte size: {outputs[0].size}")
-      data = C.string_at(outputs[0].buf, outputs[0].size)
-      return np.frombuffer(data, dtype=np.float32).copy().reshape(-1)
+      return self._output_buffers[0].astype(np.float32).reshape(-1)
     finally:
       self._lib.rknn_outputs_release(self._ctx.value, len(outputs), outputs)
 

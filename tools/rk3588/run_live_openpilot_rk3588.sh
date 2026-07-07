@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." >/dev/null && pwd)"
+MIRROR_SCRIPT="${SCRIPT_DIR}/mirror_ui_to_fb1.py"
 
 OPENCL_WARP_LIB_DEFAULT="${HOME}/.openpilot/lib/libopencl_yuv6_warp.so"
 RKNN_MODEL_PATH="${ROOT_DIR}/openpilot/selfdrive/modeld/models/driving_supercombo_rk3588.rknn"
@@ -47,6 +48,38 @@ start_affinity_watcher() {
       apply_runtime_affinity_once
       sleep 1
     done
+  ) &
+}
+
+wait_for_ui_window() {
+  local deadline=$((SECONDS + 30))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if xwininfo -root -tree 2>/dev/null | grep -q '"UI": ("UI" "UI")'; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+start_fb1_mirror() {
+  [ -e /dev/fb1 ] || return 0
+  [ -f "$MIRROR_SCRIPT" ] || return 0
+  [ -x "${ROOT_DIR}/.venv/bin/python" ] || return 0
+
+  local parent_pid="$$"
+  (
+    if wait_for_ui_window; then
+      "${ROOT_DIR}/.venv/bin/python" "$MIRROR_SCRIPT" &
+      mirror_pid="$!"
+      while kill -0 "$parent_pid" >/dev/null 2>&1 && kill -0 "$mirror_pid" >/dev/null 2>&1; do
+        sleep 1
+      done
+      kill "$mirror_pid" >/dev/null 2>&1 || true
+      wait "$mirror_pid" >/dev/null 2>&1 || true
+    else
+      echo "warning: UI X window not found; fb1 mirror was not started" >&2
+    fi
   ) &
 }
 
@@ -145,4 +178,5 @@ fi
 
 cd "$ROOT_DIR"
 start_affinity_watcher
+start_fb1_mirror
 exec ./launch_openpilot.sh

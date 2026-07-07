@@ -248,16 +248,17 @@
     </div>
     <div class="callout ok">
       <strong>현재 권장 실행:</strong>
-      <code>BIG=1 PYTHONDONTWRITEBYTECODE=1 tools/rk3588/run_openpilot_opencl_rknn.sh</code>
+      <code>tools/rk3588/run_live_openpilot_rk3588.sh</code>
       <br>
-      wrapper가 RKNN 모델 해시 확인, OpenCL warp 라이브러리 준비, webcam/modeld env 설정,
+      실차용 launcher가 RKNN 모델 존재 확인, OpenCL warp 라이브러리 준비, webcam/modeld env 설정,
       <code>prebuilt</code> marker 생성, modeld/webcamerad CPU affinity 적용,
-      <code>launch_openpilot.sh</code> 실행까지 맡습니다.
+      <code>/dev/fb1</code> 보조 미러링, <code>launch_openpilot.sh</code> 실행까지 맡습니다.
+      예전 <code>run_openpilot_opencl_rknn.sh</code> 호환 wrapper는 혼동을 줄이기 위해 제거했습니다.
     </div>
     <div class="callout warn">
       <strong>중요:</strong> <code>prebuilt</code>는 지우면 안 되는 실행 marker입니다.
       이 파일이 없으면 기본 launcher가 전체 SCons 빌드를 다시 시작하면서 Cabana 등 불필요한 빌드로 빠집니다.
-      현재 wrapper는 실행 전 이 marker를 자동 생성합니다.
+      현재 launcher는 실행 전 이 marker를 자동 생성합니다.
     </div>
     <div class="callout ok">
       <strong>현재 상태:</strong>
@@ -277,32 +278,29 @@
 cd /home/orangepi/openpilot</code></pre>
 
     <h3>2. 실행 전 환경 확인</h3>
-    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --print-env</code></pre>
+    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --print-env</code></pre>
     <p>정상 출력에는 아래 값이 포함되어야 합니다.</p>
     <pre><code>export USE_WEBCAM=1
+export BIG=1
 export ROAD_CAM=0
-export WEBCAM_WIDTH=1280
-export WEBCAM_HEIGHT=720
-export WEBCAM_FPS=25
 export WEBCAM_FOURCC=MJPG
 export OPENPILOT_MODELD_RKNN=1
 export OPENPILOT_MODELD_OPENCL_WARP=1
-export OPENPILOT_RKNN_CORE_MASK=7
 export OPENPILOT_RK3588_AFFINITY=1
 export OPENPILOT_RK3588_BIG_CORES=4-7
-export OPENPILOT_RKNN_MODEL=/home/orangepi/.openpilot/models/driving_supercombo_rk3588.rknn
 export OPENPILOT_OPENCL_WARP_LIB=/home/orangepi/.openpilot/lib/libopencl_yuv6_warp.so</code></pre>
 
     <h3>3. 준비만 수행</h3>
-    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --prepare-only</code></pre>
+    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --prepare-only</code></pre>
     <p>OpenCL warp 라이브러리를 강제로 다시 빌드하려면:</p>
-    <pre><code>tools/rk3588/run_openpilot_opencl_rknn.sh --force-build --prepare-only</code></pre>
+    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --force-build --prepare-only</code></pre>
 
     <h3>4. 전체 파이프라인 실행, BIG UI</h3>
-    <pre><code>BIG=1 PYTHONDONTWRITEBYTECODE=1 tools/rk3588/run_openpilot_opencl_rknn.sh</code></pre>
+    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh</code></pre>
     <p>
-      <code>BIG=1</code>은 PC/RK3588 환경에서도 큰 UI 레이아웃을 쓰게 합니다.
-      wrapper는 <code>DISPLAY</code>, <code>XAUTHORITY</code>, <code>XDG_RUNTIME_DIR</code>도 SSH 실행에 맞춰 가능한 범위에서 자동 보정합니다.
+      launcher가 <code>BIG=1</code>을 기본으로 설정해 PC/RK3588 환경에서도 큰 UI 레이아웃을 사용합니다.
+      <code>DISPLAY</code>, <code>XAUTHORITY</code>, <code>XDG_RUNTIME_DIR</code>도 SSH 실행에 맞춰 가능한 범위에서 자동 보정합니다.
+      <code>/dev/fb1</code>이 있으면 UI 창이 뜬 뒤 <code>mirror_ui_to_fb1.py</code>를 자동으로 붙입니다.
     </p>
 
     <h3>5. 종료와 남은 프로세스 확인</h3>
@@ -318,17 +316,12 @@ export OPENPILOT_OPENCL_WARP_LIB=/home/orangepi/.openpilot/lib/libopencl_yuv6_wa
       preview와 inference overlay를 확인하려면 bench runner를 사용합니다.
     </p>
     <pre><code>cd /home/orangepi/openpilot
-set -a
-. &lt;(tools/rk3588/run_openpilot_opencl_rknn.sh --print-env)
-set +a
-export BIG=1
-export PYTHONDONTWRITEBYTECODE=1
-export OPENPILOT_PREFIX=rk3588_bench
-rm -rf /dev/shm/msgq_${OPENPILOT_PREFIX}
-./.venv/bin/python tools/rk3588/run_webcam_bench.py \
-  --duration 90 \
-  --processes webcamerad,ui,soundd,modeld,calibrationd,plannerd \
-  --road-cam 0 --fourcc MJPG --width 1280 --height 720 --fps 25</code></pre>
+tools/rk3588/run_webcam_bench_big_ui.sh</code></pre>
+    <p>
+      이 스크립트는 실차 제어용이 아닙니다. demo params와 webcam bench message를 사용해
+      <code>webcamerad,ui,soundd,modeld,calibrationd,plannerd</code>만 띄웁니다.
+      실제 차량에서는 항상 <code>run_live_openpilot_rk3588.sh</code>를 사용합니다.
+    </p>
 
     <h3>modelV2 timing 측정</h3>
     <p>bench나 전체 파이프라인이 이미 떠 있는 상태에서 같은 prefix로 측정합니다.</p>
@@ -379,7 +372,7 @@ PYTHONDONTWRITEBYTECODE=1 \
       </tbody>
     </table>
     <p class="small">
-      이 수치는 <code>OPENPILOT_RKNN_CORE_MASK=7</code>, RKNN input queue float16 최적화,
+      이 수치는 NPU core 3개 사용, RKNN input queue float16 최적화,
       modeld/webcamerad <code>4-7</code> CPU affinity를 적용한 10분 BIG UI full bench 결과입니다.
       최신 10분 run id는 <code>/home/orangepi/rk3588_debug_runs/rk3588_long_20260704_111947</code>입니다.
       model publish period 평균 기준 <code>20.000 FPS</code> 수준입니다.
@@ -538,7 +531,7 @@ cx=695.545910 cy=445.315425</code></pre>
         <div class="title">20 FPS 최적화</div>
         <p>
           초기 RKNN 실행은 model period 평균 약 <code>54.1 ms</code>로 20 FPS에 못 미쳤습니다.
-          <code>OPENPILOT_RKNN_CORE_MASK=7</code>이 mask <code>0</code>, <code>3</code>, <code>65535</code>보다 안정적이었고,
+          NPU core 3개 사용 조건이 다른 core mask 실험보다 안정적이었고,
           RKNN input queue를 <code>float16</code>으로 바꿔 매 frame pack cost를 줄였습니다.
           그 결과 60초 bench에서 model execution p95가 <code>49.436 ms</code>까지 내려갔습니다.
         </p>
@@ -599,7 +592,7 @@ find tools/rk3588 -maxdepth 2 -type f | sort</code></pre>
       </li>
       <li>
         <strong>환경 출력 확인:</strong>
-        <code>tools/rk3588/run_openpilot_opencl_rknn.sh --print-env</code>에
+        <code>tools/rk3588/run_live_openpilot_rk3588.sh --print-env</code>에
         <code>OPENPILOT_RK3588_BIG_CORES=4-7</code>가 포함되어야 합니다.
         또한 아래 명령이 <code>2.1.0</code>을 출력해야 합니다.
         <pre><code>./.venv/bin/python -c 'import importlib.metadata as m; print(m.version("pycapnp"))'</code></pre>
@@ -615,7 +608,7 @@ find tools/rk3588 -maxdepth 2 -type f | sort</code></pre>
   tools/rk3588/run_webcam_bench.py \
   tools/rk3588/measure_modeld_metrics.py \
   tools/rk3588/calibrate_webcam_intrinsics.py
-bash -n tools/rk3588/run_openpilot_opencl_rknn.sh
+bash -n tools/rk3588/run_live_openpilot_rk3588.sh
 git diff --check</code></pre>
       </li>
       <li>
@@ -661,8 +654,16 @@ git diff --check</code></pre>
           <td>GPU에서 NV12 webcam frame을 모델의 YUV6 입력으로 warp.</td>
         </tr>
         <tr>
-          <td><code>tools/rk3588/run_openpilot_opencl_rknn.sh</code></td>
-          <td>실사용 launcher. RKNN/OpenCL/webcam/BIG UI 환경 준비, <code>prebuilt</code> marker 관리, modeld/webcamerad affinity watcher.</td>
+          <td><code>tools/rk3588/run_live_openpilot_rk3588.sh</code></td>
+          <td>실사용 launcher. RKNN/OpenCL/webcam/BIG UI 환경 준비, <code>prebuilt</code> marker 관리, modeld/webcamerad affinity watcher, fb1 보조 미러링.</td>
+        </tr>
+        <tr>
+          <td><code>tools/rk3588/run_webcam_bench_big_ui.sh</code></td>
+          <td>실차와 무관한 webcam BIG UI bench launcher. demo params와 bench message만 사용.</td>
+        </tr>
+        <tr>
+          <td><code>tools/rk3588/mirror_ui_to_fb1.py</code></td>
+          <td>Xwayland UI window를 480x320 RGB565 framebuffer <code>/dev/fb1</code>로 단순 미러링. 종료 시 fb1 clear.</td>
         </tr>
         <tr>
           <td><code>openpilot/common/transformations/camera.py</code></td>
@@ -750,20 +751,12 @@ git diff --check</code></pre>
       이 문서를 갱신할 때 보드의 source status에는 아래 포팅 관련 파일들이 남아 있었습니다.
       최종 커밋 전에는 한 번 더 <code>git diff</code>로 불필요한 실험 흔적이 없는지 확인해야 합니다.
     </p>
-    <pre><code>M  openpilot/common/transformations/camera.py
-M  openpilot/selfdrive/modeld/modeld.py
-M  openpilot/selfdrive/ui/onroad/augmented_road_view.py
-M  openpilot/selfdrive/ui/onroad/cameraview.py
-M  openpilot/system/camerad/webcam/camera.py
-M  openpilot/system/ui/lib/application.py
-?? openpilot/selfdrive/modeld/opencl_warp.py
-?? openpilot/selfdrive/modeld/rknn_policy.py
-?? tools/rk3588/calibrate_webcam_intrinsics.py
-?? tools/rk3588/measure_modeld_metrics.py
-?? tools/rk3588/opencl_yuv6_warp.cpp
-?? tools/rk3588/rk3588_porting_history_ko.html
-?? tools/rk3588/run_openpilot_opencl_rknn.sh
-?? tools/rk3588/run_webcam_bench.py</code></pre>
+    <pre><code>M  openpilot/selfdrive/modeld/rknn_policy.py
+M  tools/rk3588/rk3588_porting_history_ko.html
+D  tools/rk3588/run_openpilot_opencl_rknn.sh
+?? tools/rk3588/mirror_ui_to_fb1.py
+?? tools/rk3588/run_live_openpilot_rk3588.sh
+?? tools/rk3588/run_webcam_bench_big_ui.sh</code></pre>
   </section>
 
   <section>
@@ -773,7 +766,7 @@ M  openpilot/system/ui/lib/application.py
         <li><code>big_driving_supercombo.onnx</code>는 이 포팅 경로에서 사용하지 않습니다.</li>
         <li>tinygrad CL 실험 경로는 현재 실사용 경로가 아닙니다. 직접 OpenCL warp + RKNN을 사용합니다.</li>
         <li>메모리 문제를 수동 <code>gc.collect()</code>로 덮지 않습니다. 보드 venv의 <code>pycapnp</code>는 repo pin인 <code>2.1.0</code>으로 유지합니다.</li>
-        <li><code>prebuilt</code> marker를 쓰레기 파일로 보고 지우지 않습니다. wrapper가 전체 SCons 빌드를 피하기 위해 관리합니다.</li>
+        <li><code>prebuilt</code> marker를 쓰레기 파일로 보고 지우지 않습니다. launcher가 전체 SCons 빌드를 피하기 위해 관리합니다.</li>
         <li>문제 해결을 위해 controlsd, panda safety, car interface를 건드리지 않습니다. 현재 작업은 runtime/bench/vision/modeld/UI preview 포팅 범위입니다.</li>
         <li>검증 후에는 <code>PYTHONDONTWRITEBYTECODE=1</code>을 쓰거나 <code>__pycache__</code>를 정리하고 상태를 다시 봅니다.</li>
       </ul>
@@ -786,15 +779,11 @@ M  openpilot/system/ui/lib/application.py
 git status --short -uall
 git diff --check
 PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -m py_compile \
-  openpilot/selfdrive/modeld/modeld.py \
   openpilot/selfdrive/modeld/rknn_policy.py \
-  openpilot/selfdrive/modeld/opencl_warp.py \
-  openpilot/common/transformations/camera.py \
-  openpilot/system/camerad/webcam/camera.py \
-  tools/rk3588/run_webcam_bench.py \
-  tools/rk3588/measure_modeld_metrics.py \
-  tools/rk3588/calibrate_webcam_intrinsics.py
-bash -n tools/rk3588/run_openpilot_opencl_rknn.sh
+  tools/rk3588/mirror_ui_to_fb1.py
+bash -n \
+  tools/rk3588/run_live_openpilot_rk3588.sh \
+  tools/rk3588/run_webcam_bench_big_ui.sh
 grep -RInE 'MODELD_TIMING|rk3588_.*timing|gc\.collect|malloc_trim|OPENPILOT_.*GC|breakpoint\(' \
   openpilot/selfdrive/modeld tools/rk3588 openpilot/system/camerad/webcam openpilot/common/transformations || true</code></pre>
     <p class="small">
