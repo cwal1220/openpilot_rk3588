@@ -134,15 +134,10 @@ def seed_onboarding_params(params):
 
 def build_messages(CP, speed: float):
   from openpilot.cereal import log, messaging
-  from openpilot.common.hardware import HARDWARE
   from opendbc.car.structs import car
 
   msgs = {service: messaging.new_message(service, valid=True) for service in PUBLISH_SERVICES if service != "pandaStates"}
   msgs["pandaStates"] = messaging.new_message("pandaStates", 1, valid=True)
-
-  msgs["deviceState"].deviceState.started = True
-  msgs["deviceState"].deviceState.deviceType = HARDWARE.get_device_type()
-  msgs["deviceState"].deviceState.thermalStatus = log.DeviceState.ThermalStatus.ok
 
   msgs["pandaStates"].pandaStates[0].ignitionLine = True
   msgs["pandaStates"].pandaStates[0].pandaType = log.PandaState.PandaType.uno
@@ -194,9 +189,18 @@ def build_messages(CP, speed: float):
   return msgs
 
 
-def publish_messages(pm, msgs, managed_processes, process_names: tuple[str, ...]) -> None:
-  from openpilot.cereal import messaging
+def publish_messages(pm, msgs, managed_processes, process_names: tuple[str, ...], thermal_config, device_type: str) -> None:
+  from openpilot.cereal import log, messaging
 
+  msgs["deviceState"] = messaging.new_message("deviceState", valid=True)
+  device_state = msgs["deviceState"].deviceState
+  device_state.started = True
+  device_state.deviceType = device_type
+  for field, value in thermal_config.get_msg().items():
+    setattr(device_state, field, value)
+  max_temp = max([device_state.memoryTempC, *device_state.cpuTempC, *device_state.gpuTempC, *device_state.pmicTempC], default=0.0)
+  device_state.maxTempC = max_temp
+  device_state.thermalStatus = log.DeviceState.ThermalStatus.critical if max_temp > 107.0 else log.DeviceState.ThermalStatus.overheated if max_temp > 96.0 else log.DeviceState.ThermalStatus.ok
   manager_states = [managed_processes[name].get_process_state_msg() for name in process_names]
   msgs["managerState"] = messaging.new_message("managerState", valid=True)
   msgs["managerState"].managerState.processes = manager_states
@@ -208,12 +212,14 @@ def publish_messages(pm, msgs, managed_processes, process_names: tuple[str, ...]
 
 def run_publisher(args: argparse.Namespace, managed_processes, CP, process_names: tuple[str, ...]) -> bool:
   from openpilot.cereal import messaging
+  from openpilot.common.hardware import HARDWARE
   from openpilot.common.params import Params
   from openpilot.common.realtime import Ratekeeper
 
   params = Params()
   pm = messaging.PubMaster(PUBLISH_SERVICES)
   msgs = build_messages(CP, args.speed)
+  thermal_config, device_type = HARDWARE.get_thermal_config(), HARDWARE.get_device_type()
   rk = Ratekeeper(args.publish_hz, print_delay_threshold=None)
   start_time = time.monotonic()
   last_cycle_check = 0.0
@@ -225,7 +231,7 @@ def run_publisher(args: argparse.Namespace, managed_processes, CP, process_names
       if params.get_bool("OnroadCycleRequested"):
         params.remove("OnroadCycleRequested")
         return True
-    publish_messages(pm, msgs, managed_processes, process_names)
+    publish_messages(pm, msgs, managed_processes, process_names, thermal_config, device_type)
     rk.keep_time()
   return False
 
