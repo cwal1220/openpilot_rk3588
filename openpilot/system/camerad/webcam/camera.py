@@ -20,9 +20,9 @@ class Camera:
     fourcc = os.getenv("WEBCAM_FOURCC", "").strip()
     if len(fourcc) == 4:
       self.cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*fourcc))
-    self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 1280.0)
-    self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 720.0)
-    self.cap.set(cv.CAP_PROP_FPS, 25.0)
+    self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 1056.0)
+    self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 784.0)
+    self.cap.set(cv.CAP_PROP_FPS, 20.0)
 
     self.W = self.cap.get(cv.CAP_PROP_FRAME_WIDTH)
     self.H = self.cap.get(cv.CAP_PROP_FRAME_HEIGHT)
@@ -37,8 +37,6 @@ class Camera:
       ret, frame = self.cap.read()
       if not ret:
         break
-      # Rotate the frame 180 degrees (flip both axes)
-      frame = cv.flip(frame, -1)
       yuv = Camera.bgr2nv12(frame)
       yield yuv.data.tobytes()
     self.cap.release()

@@ -65,16 +65,16 @@ prepare_display_env
 export PYTHONDONTWRITEBYTECODE=1
 export BIG=1
 export USE_WEBCAM=1
-export ROAD_CAM=0
-export WEBCAM_FOURCC=MJPG
+export ROAD_CAM=11
+export WEBCAM_FOURCC=NV12
 
 cd "$ROOT_DIR"
 
 ./.venv/bin/python tools/rk3588/run_webcam_bench.py \
   --duration 0 \
   --processes "$PROCESSES" \
-  --road-cam 0 \
-  --fourcc MJPG &
+  --road-cam 11 \
+  --fourcc NV12 &
 bench_pid="$!"
 
 if wait_for_ui_window; then
