@@ -20,6 +20,9 @@ class Camera:
     fourcc = os.getenv("WEBCAM_FOURCC", "").strip()
     if len(fourcc) == 4:
       self.cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*fourcc))
+    self.raw_nv12 = fourcc == "NV12"
+    if self.raw_nv12:
+      self.cap.set(cv.CAP_PROP_CONVERT_RGB, 0)
     self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 1056.0)
     self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 784.0)
     self.cap.set(cv.CAP_PROP_FPS, 20.0)
@@ -37,6 +40,6 @@ class Camera:
       ret, frame = self.cap.read()
       if not ret:
         break
-      yuv = Camera.bgr2nv12(frame)
-      yield yuv.data.tobytes()
+      yuv = frame if self.raw_nv12 else Camera.bgr2nv12(frame)
+      yield yuv.reshape(-1).data
     self.cap.release()
