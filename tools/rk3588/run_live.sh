@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." >/dev/null && pwd)"
-MIRROR_SCRIPT="${SCRIPT_DIR}/mirror_ui_to_fb1.py"
 
 OPENCL_WARP_LIB_DEFAULT="${HOME}/.openpilot/lib/libopencl_yuv6_warp.so"
 RKNN_MODEL_PATH="${ROOT_DIR}/openpilot/selfdrive/modeld/models/driving_supercombo_rk3588.rknn"
@@ -34,7 +33,7 @@ apply_runtime_affinity_once() {
   command -v taskset >/dev/null || return 0
 
   for pattern in "openpilot.selfdrive.modeld.modeld" "openpilot.system.camerad.webcam.camerad"; do
-    pgrep -f "$pattern" | while read -r pid; do
+    (pgrep -f "$pattern" || true) | while read -r pid; do
       taskset -pc "${OPENPILOT_RK3588_BIG_CORES}" "$pid" >/dev/null 2>&1 || true
     done
   done
@@ -48,38 +47,6 @@ start_affinity_watcher() {
       apply_runtime_affinity_once
       sleep 1
     done
-  ) &
-}
-
-wait_for_ui_window() {
-  local deadline=$((SECONDS + 30))
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    if xwininfo -root -tree 2>/dev/null | grep -q '"UI": ("UI" "UI")'; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-
-start_fb1_mirror() {
-  [ -e /dev/fb1 ] || return 0
-  [ -f "$MIRROR_SCRIPT" ] || return 0
-  [ -x "${ROOT_DIR}/.venv/bin/python" ] || return 0
-
-  local parent_pid="$$"
-  (
-    if wait_for_ui_window; then
-      "${ROOT_DIR}/.venv/bin/python" "$MIRROR_SCRIPT" &
-      mirror_pid="$!"
-      while kill -0 "$parent_pid" >/dev/null 2>&1 && kill -0 "$mirror_pid" >/dev/null 2>&1; do
-        sleep 1
-      done
-      kill "$mirror_pid" >/dev/null 2>&1 || true
-      wait "$mirror_pid" >/dev/null 2>&1 || true
-    else
-      echo "warning: UI X window not found; fb1 mirror was not started" >&2
-    fi
   ) &
 }
 
@@ -125,7 +92,6 @@ PY
 fi
 
 export USE_WEBCAM="${USE_WEBCAM:-1}"
-export BIG="${BIG:-1}"
 export ROAD_CAM="${ROAD_CAM:-11}"
 export WEBCAM_FOURCC="${WEBCAM_FOURCC:-NV12}"
 export OPENPILOT_MODELD_RKNN="${OPENPILOT_MODELD_RKNN:-1}"
@@ -134,11 +100,20 @@ export OPENPILOT_RK3588_AFFINITY="${OPENPILOT_RK3588_AFFINITY:-1}"
 export OPENPILOT_RK3588_BIG_CORES="${OPENPILOT_RK3588_BIG_CORES:-4-7}"
 export OPENPILOT_OPENCL_WARP_LIB="$OPENCL_WARP_LIB"
 
+if [ -e /dev/fb1 ] && [ -S /tmp/.X11-unix/X2 ]; then
+  export DISPLAY=:2 BIG=0 SCALE=0.895522 FPS=12
+else
+  export BIG="${BIG:-1}"
+fi
+
 if [ "$print_env" -eq 1 ]; then
   for var in USE_WEBCAM BIG ROAD_CAM WEBCAM_FOURCC OPENPILOT_MODELD_RKNN \
              OPENPILOT_MODELD_OPENCL_WARP OPENPILOT_RK3588_AFFINITY \
              OPENPILOT_RK3588_BIG_CORES OPENPILOT_OPENCL_WARP_LIB; do
     printf 'export %s=%q\n' "$var" "${!var}"
+  done
+  for var in DISPLAY SCALE FPS; do
+    [ -v "$var" ] && printf 'export %s=%q\n' "$var" "${!var}"
   done
 fi
 
@@ -167,7 +142,7 @@ if [ -z "${DISPLAY:-}" ] && [ -S /tmp/.X11-unix/X0 ]; then
   export DISPLAY=":0"
 fi
 
-if [ -z "${XAUTHORITY:-}" ]; then
+if [ "${DISPLAY:-}" != ":2" ] && [ -z "${XAUTHORITY:-}" ]; then
   for xauth in "${XDG_RUNTIME_DIR:-}/.mutter-Xwaylandauth."* "${HOME}/.Xauthority"; do
     if [ -s "$xauth" ]; then
       export XAUTHORITY="$xauth"
@@ -178,5 +153,4 @@ fi
 
 cd "$ROOT_DIR"
 start_affinity_watcher
-start_fb1_mirror
 exec ./launch_openpilot.sh

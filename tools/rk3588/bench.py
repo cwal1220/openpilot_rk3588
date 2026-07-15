@@ -158,8 +158,8 @@ def build_messages(CP, speed: float):
   car_state.gearShifter = car.CarState.GearShifter.drive
 
   car_control = msgs["carControl"].carControl
-  car_control.enabled = False
-  car_control.latActive = False
+  car_control.enabled = True
+  car_control.latActive = True
   car_control.longActive = False
   car_control.orientationNED = [0.0, 0.0, 0.0]
   car_control.angularVelocity = [0.0, 0.0, 0.0]
@@ -178,9 +178,9 @@ def build_messages(CP, speed: float):
   live_delay.lateralDelay = CP.steerActuatorDelay + 0.2
   live_delay.status = log.LiveDelayData.Status.estimated
 
-  msgs["selfdriveState"].selfdriveState.state = log.SelfdriveState.OpenpilotState.disabled
-  msgs["selfdriveState"].selfdriveState.enabled = False
-  msgs["selfdriveState"].selfdriveState.active = False
+  msgs["selfdriveState"].selfdriveState.state = log.SelfdriveState.OpenpilotState.enabled
+  msgs["selfdriveState"].selfdriveState.enabled = True
+  msgs["selfdriveState"].selfdriveState.active = True
   msgs["selfdriveState"].selfdriveState.engageable = True
   msgs["selfdriveState"].selfdriveState.alertSound = log.SelfdriveState.AudibleAlert.none
   msgs["selfdriveState"].selfdriveState.personality = log.LongitudinalPersonality.standard
@@ -245,6 +245,9 @@ def install_signal_handlers() -> None:
 
 
 def main() -> int:
+  from openpilot.common.params import Params
+
+  calibration_params = Params().get("CalibrationParams")
   args = parse_args()
   prefix = os.environ.get("OPENPILOT_PREFIX", f"rk3588_{os.getpid()}")
   if not prefix.startswith("rk3588_") or "/" in prefix:
@@ -252,12 +255,13 @@ def main() -> int:
   process_names = parse_processes(args.processes)
   set_webcam_env(args, prefix)
 
-  from openpilot.common.params import Params
   from openpilot.system.manager.process_config import managed_processes
 
   while True:
     Path("/dev/shm", f"msgq_{prefix}").mkdir(exist_ok=True)
     params = Params()
+    if calibration_params is not None:
+      params.put("CalibrationParams", calibration_params, block=True)
     CP = seed_car_params(params)
     seed_onboarding_params(params)
     started: list[str] = []

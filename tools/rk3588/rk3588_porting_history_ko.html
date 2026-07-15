@@ -248,11 +248,12 @@
     </div>
     <div class="callout ok">
       <strong>현재 권장 실행:</strong>
-      <code>tools/rk3588/run_live_openpilot_rk3588.sh</code>
+      <code>tools/rk3588/run_live.sh</code>
       <br>
       실차용 launcher가 RKNN 모델 존재 확인, OpenCL warp 라이브러리 준비, webcam/modeld env 설정,
       <code>prebuilt</code> marker 생성, modeld/webcamerad CPU affinity 적용,
-      <code>/dev/fb1</code> 보조 미러링, <code>launch_openpilot.sh</code> 실행까지 맡습니다.
+      <code>/dev/fb1</code>의 전용 Xorg에 작은 UI 직접 표시, <code>launch_openpilot.sh</code> 실행까지 맡습니다.
+      브라우저에서 볼 때는 <code>stream_ui.py</code>를 별도로 실행합니다.
       예전 <code>run_openpilot_opencl_rknn.sh</code> 호환 wrapper는 혼동을 줄이기 위해 제거했습니다.
     </div>
     <div class="callout warn">
@@ -278,49 +279,175 @@
 cd /home/orangepi/openpilot</code></pre>
 
     <h3>2. 실행 전 환경 확인</h3>
-    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --print-env</code></pre>
+    <pre><code>tools/rk3588/run_live.sh --print-env</code></pre>
     <p>정상 출력에는 아래 값이 포함되어야 합니다.</p>
     <pre><code>export USE_WEBCAM=1
-export BIG=1
-export ROAD_CAM=0
-export WEBCAM_FOURCC=MJPG
+export BIG=0
+export ROAD_CAM=11
+export WEBCAM_FOURCC=NV12
 export OPENPILOT_MODELD_RKNN=1
 export OPENPILOT_MODELD_OPENCL_WARP=1
 export OPENPILOT_RK3588_AFFINITY=1
 export OPENPILOT_RK3588_BIG_CORES=4-7
-export OPENPILOT_OPENCL_WARP_LIB=/home/orangepi/.openpilot/lib/libopencl_yuv6_warp.so</code></pre>
+export OPENPILOT_OPENCL_WARP_LIB=/home/orangepi/.openpilot/lib/libopencl_yuv6_warp.so
+export DISPLAY=:2
+export SCALE=0.895522
+export FPS=12</code></pre>
 
     <h3>3. 준비만 수행</h3>
-    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --prepare-only</code></pre>
+    <pre><code>tools/rk3588/run_live.sh --prepare-only</code></pre>
     <p>OpenCL warp 라이브러리를 강제로 다시 빌드하려면:</p>
-    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh --force-build --prepare-only</code></pre>
+    <pre><code>tools/rk3588/run_live.sh --force-build --prepare-only</code></pre>
 
-    <h3>4. 전체 파이프라인 실행, BIG UI</h3>
-    <pre><code>tools/rk3588/run_live_openpilot_rk3588.sh</code></pre>
+    <h3>4. 전체 파이프라인 실행</h3>
+    <pre><code>tools/rk3588/run_live.sh</code></pre>
     <p>
-      launcher가 <code>BIG=1</code>을 기본으로 설정해 PC/RK3588 환경에서도 큰 UI 레이아웃을 사용합니다.
+      <code>/dev/fb1</code>과 전용 Xorg <code>:2</code>가 있으면 작은 UI를 LCD에 직접 표시하고,
+      없으면 <code>BIG=1</code>을 기본으로 사용합니다.
       <code>DISPLAY</code>, <code>XAUTHORITY</code>, <code>XDG_RUNTIME_DIR</code>도 SSH 실행에 맞춰 가능한 범위에서 자동 보정합니다.
-      <code>/dev/fb1</code>이 있으면 UI 창이 뜬 뒤 <code>mirror_ui_to_fb1.py</code>를 자동으로 붙입니다.
     </p>
 
     <h3>5. 종료와 남은 프로세스 확인</h3>
     <p>정상적으로는 실행 터미널에서 <code>Ctrl-C</code>를 먼저 사용합니다. 멈춘 프로세스가 남으면 아래처럼 확인합니다.</p>
-    <pre><code>pgrep -af '[r]un_webcam_bench|[m]odeld|[w]ebcamerad|[u]i\.ui|[s]oundd|[c]alibrationd|[p]lannerd|[l]aunch_chffrplus|[m]anager.py' || true</code></pre>
+    <pre><code>pgrep -af '[b]ench.py|[m]odeld|[w]ebcamerad|[u]i\.ui|[s]oundd|[c]alibrationd|[p]lannerd|[l]aunch_chffrplus|[m]anager.py' || true</code></pre>
+  </section>
+
+  <section>
+    <h2>480x320 작은 UI 직접 표시 포팅</h2>
+    <div class="callout ok">
+      <strong>최종 구조:</strong> 큰 UI를 캡처해 <code>/dev/fb1</code>으로 복사하지 않습니다.
+      <code>fb_ili9486</code> framebuffer 위에 Xorg <code>:2</code>를 직접 띄우고,
+      openpilot 작은 UI가 그 display에 바로 렌더링합니다. 기존 framebuffer 미러링 프로세스는 제거했고,
+      Flask 웹 스트리밍은 <code>stream_ui.py</code>에 선택 기능으로만 남겼습니다.
+    </div>
+
+    <h3>확인된 framebuffer 구성</h3>
+    <table>
+      <thead>
+        <tr><th>장치</th><th>드라이버</th><th>해상도 / 포맷</th><th>용도</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/dev/fb0</code></td><td><code>rockchipdrmfb</code></td><td>1920x1080, 32 bpp</td><td>기존 HDMI/DRM display</td></tr>
+        <tr><td><code>/dev/fb1</code></td><td><code>fb_ili9486</code></td><td>480x320, RGB565 16 bpp</td><td>MHS35 SPI LCD</td></tr>
+      </tbody>
+    </table>
+    <p>
+      커널의 LCD framebuffer 드라이버 <code>fb_ili9486</code> 자체는 변경하지 않았습니다.
+      추가한 것은 Xorg가 일반 framebuffer를 화면으로 사용할 수 있게 하는 userspace <code>fbdev</code> 드라이버입니다.
+    </p>
+
+    <h3>설치한 패키지</h3>
+    <pre><code>sudo apt-get install -y xserver-xorg-video-fbdev</code></pre>
+    <table>
+      <thead><tr><th>패키지</th><th>버전</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td><code>xserver-xorg-video-fbdev</code></td><td>1:0.5.0-2build2</td><td>이번 작업에서 신규 설치</td></tr>
+        <tr><td><code>xserver-xorg-core</code></td><td>2:21.1.12-1ubuntu1.6</td><td>기존 설치본 사용</td></tr>
+        <tr><td><code>xserver-xorg-input-libinput</code></td><td>1.4.0-1ubuntu24.04.1</td><td>기존 설치본으로 touchscreen 입력 처리</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Xorg fbdev 설정</h3>
+    <p><code>/etc/X11/xorg-fb1.conf</code>를 아래처럼 추가했습니다.</p>
+    <pre><code>Section "Device"
+  Identifier "MHS35"
+  Driver "fbdev"
+  Option "fbdev" "/dev/fb1"
+  Option "ShadowFB" "true"
+EndSection
+
+Section "Screen"
+  Identifier "MHS35Screen"
+  Device "MHS35"
+  DefaultDepth 16
+  SubSection "Display"
+    Depth 16
+    Modes "480x320"
+  EndSubSection
+EndSection
+
+Section "ServerLayout"
+  Identifier "MHS35Layout"
+  Screen "MHS35Screen"
+EndSection</code></pre>
+    <p>
+      Xorg 로그에서 <code>fbdev_drv.so</code> 로드, <code>/dev/fb1</code> 선택,
+      virtual size <code>480x320</code> 적용을 확인했습니다.
+    </p>
+
+    <h3>터치 드라이버 재빌드와 bind</h3>
+    <div class="callout warn">
+      재부팅 직후 기존 <code>ads7846_poll.ko</code>는 현재 커널과 ABI가 맞지 않아
+      <code>Invalid module format</code>으로 로드되지 않았습니다. 오래된 모듈을 재사용하지 않고,
+      현재 커널 <code>6.1.115-vendor-rk35xx</code>의 build tree로 다시 컴파일했습니다.
+    </div>
+    <pre><code>cd /home/orangepi/orangepi5-mhs35
+./scripts/build-kernel-module.sh
+sudo ./scripts/install-touch-autoload.sh</code></pre>
+    <p>빌드 명령과 설치 위치는 다음과 같습니다.</p>
+    <pre><code>make -C /lib/modules/$(uname -r)/build \
+  M=/home/orangepi/orangepi5-mhs35/kernel/ads7846_poll modules
+
+/lib/modules/6.1.115-vendor-rk35xx/extra/ads7846_poll.ko</code></pre>
+    <p>
+      loader는 기존 <code>ads7846</code>/<code>spidev</code>를 해제하고, 필요하면 현재 driver에서
+      <code>spi4.0</code>을 unbind한 다음 <code>driver_override=ads7846_poll</code>로 새 모듈에 bind합니다.
+      bind 후 override를 비워 다음 부팅 상태를 오염시키지 않습니다.
+      최종 상태는 <code>spi4.0 -&gt; ads7846_poll</code>, 입력 장치는
+      <code>ADS7846 Poll Touchscreen</code>이며 당시 event node는 <code>/dev/input/event7</code>였습니다.
+      event 번호는 부팅 순서에 따라 바뀔 수 있으므로 이름으로 식별해야 합니다.
+    </p>
+
+    <h3>자동 시작 서비스</h3>
+    <table>
+      <thead><tr><th>unit</th><th>동작</th><th>최종 상태</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mhs35-xorg.service</code></td>
+          <td><code>Xorg :2 -config /etc/X11/xorg-fb1.conf -ac -nolisten tcp -noreset -novtswitch -sharevts</code></td>
+          <td><code>enabled / active</code>, 계속 실행되는 Xorg 프로세스</td>
+        </tr>
+        <tr>
+          <td><code>orangepi5-ads7846-poll.service</code></td>
+          <td><code>/usr/local/sbin/orangepi5-load-ads7846-poll.sh</code>로 모듈 로드와 <code>spi4.0</code> bind</td>
+          <td><code>enabled / active</code>, <code>Type=oneshot</code> + <code>RemainAfterExit=yes</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      터치 unit은 상주 daemon이 아니라 부팅 때 한 번 bind하는 oneshot입니다.
+      실제 상주 display daemon은 Xorg <code>:2</code> 하나입니다. 별도 framebuffer 미러링 daemon과
+      웹 스트리밍 daemon은 자동으로 띄우지 않습니다.
+    </p>
+    <pre><code>sudo systemctl daemon-reload
+sudo systemctl enable --now mhs35-xorg.service
+sudo systemctl enable --now orangepi5-ads7846-poll.service</code></pre>
+
+    <h3>openpilot launcher 연결</h3>
+    <p>
+      <code>run_live.sh</code>는 <code>/dev/fb1</code>과 <code>/tmp/.X11-unix/X2</code>가 모두 있을 때
+      <code>DISPLAY=:2</code>, <code>BIG=0</code>, <code>SCALE=0.895522</code>, <code>FPS=12</code>를 적용합니다.
+      따라서 별도 framebuffer backend나 화면 복사 루프 없이 기존 mici 작은 UI가 Xorg fbdev에 직접 그려집니다.
+    </p>
+    <pre><code>systemctl status mhs35-xorg.service orangepi5-ads7846-poll.service
+ls -l /tmp/.X11-unix/X2
+DISPLAY=:2 xinput list
+tools/rk3588/run_live.sh --print-env</code></pre>
   </section>
 
   <section>
     <h2>벤치 및 측정 절차</h2>
-    <h3>BIG UI 포함 controlled bench</h3>
+    <h3>작은 UI 포함 controlled bench</h3>
     <p>
       manager의 실제 ignition/started 조건과 별개로, 카메라, UI, modeld, calibrationd, plannerd를 강제로 띄워
       preview와 inference overlay를 확인하려면 bench runner를 사용합니다.
     </p>
     <pre><code>cd /home/orangepi/openpilot
-tools/rk3588/run_webcam_bench_big_ui.sh</code></pre>
+tools/rk3588/run_bench.sh</code></pre>
     <p>
       이 스크립트는 실차 제어용이 아닙니다. demo params와 webcam bench message를 사용해
       <code>webcamerad,ui,soundd,modeld,calibrationd,plannerd</code>만 띄웁니다.
-      실제 차량에서는 항상 <code>run_live_openpilot_rk3588.sh</code>를 사용합니다.
+      실제 차량에서는 항상 <code>run_live.sh</code>를 사용합니다.
     </p>
 
     <h3>modelV2 timing 측정</h3>
@@ -592,7 +719,7 @@ find tools/rk3588 -maxdepth 2 -type f | sort</code></pre>
       </li>
       <li>
         <strong>환경 출력 확인:</strong>
-        <code>tools/rk3588/run_live_openpilot_rk3588.sh --print-env</code>에
+        <code>tools/rk3588/run_live.sh --print-env</code>에
         <code>OPENPILOT_RK3588_BIG_CORES=4-7</code>가 포함되어야 합니다.
         또한 아래 명령이 <code>2.1.0</code>을 출력해야 합니다.
         <pre><code>./.venv/bin/python -c 'import importlib.metadata as m; print(m.version("pycapnp"))'</code></pre>
@@ -605,10 +732,10 @@ find tools/rk3588 -maxdepth 2 -type f | sort</code></pre>
   openpilot/selfdrive/modeld/opencl_warp.py \
   openpilot/common/transformations/camera.py \
   openpilot/system/camerad/webcam/camera.py \
-  tools/rk3588/run_webcam_bench.py \
+  tools/rk3588/bench.py \
   tools/rk3588/measure_modeld_metrics.py \
   tools/rk3588/calibrate_webcam_intrinsics.py
-bash -n tools/rk3588/run_live_openpilot_rk3588.sh
+bash -n tools/rk3588/run_live.sh
 git diff --check</code></pre>
       </li>
       <li>
@@ -654,16 +781,16 @@ git diff --check</code></pre>
           <td>GPU에서 NV12 webcam frame을 모델의 YUV6 입력으로 warp.</td>
         </tr>
         <tr>
-          <td><code>tools/rk3588/run_live_openpilot_rk3588.sh</code></td>
-          <td>실사용 launcher. RKNN/OpenCL/webcam/BIG UI 환경 준비, <code>prebuilt</code> marker 관리, modeld/webcamerad affinity watcher, fb1 보조 미러링.</td>
+          <td><code>tools/rk3588/run_live.sh</code></td>
+          <td>실사용 launcher. RKNN/OpenCL/webcam 환경 준비, <code>prebuilt</code> marker 관리, modeld/webcamerad affinity watcher, fb1 전용 Xorg 직접 표시.</td>
         </tr>
         <tr>
-          <td><code>tools/rk3588/run_webcam_bench_big_ui.sh</code></td>
+          <td><code>tools/rk3588/run_bench.sh</code></td>
           <td>실차와 무관한 webcam BIG UI bench launcher. demo params와 bench message만 사용.</td>
         </tr>
         <tr>
-          <td><code>tools/rk3588/mirror_ui_to_fb1.py</code></td>
-          <td>Xwayland UI window를 480x320 RGB565 framebuffer <code>/dev/fb1</code>로 단순 미러링. 종료 시 fb1 clear.</td>
+          <td><code>tools/rk3588/stream_ui.py</code></td>
+          <td>Flask와 RK3588 JPEG encoder로 UI를 브라우저에 전송하고 pointer 입력을 UI에 전달하는 선택 기능.</td>
         </tr>
         <tr>
           <td><code>openpilot/common/transformations/camera.py</code></td>
@@ -686,7 +813,7 @@ git diff --check</code></pre>
           <td>pyray/raygui 버전 차이로 인한 BIG UI style color unsigned 변환 호환성.</td>
         </tr>
         <tr>
-          <td><code>tools/rk3588/run_webcam_bench.py</code>, <code>measure_modeld_metrics.py</code>, <code>calibrate_webcam_intrinsics.py</code></td>
+          <td><code>tools/rk3588/bench.py</code>, <code>measure_modeld_metrics.py</code>, <code>calibrate_webcam_intrinsics.py</code></td>
           <td>벤치 실행, modelV2 timing 측정, 독립 OpenCV intrinsic 캘리브레이션.</td>
         </tr>
       </tbody>
@@ -746,17 +873,14 @@ git diff --check</code></pre>
   </section>
 
   <section>
-    <h2>현재 git 상태 기준</h2>
+    <h2>형상 확인</h2>
     <p>
-      이 문서를 갱신할 때 보드의 source status에는 아래 포팅 관련 파일들이 남아 있었습니다.
-      최종 커밋 전에는 한 번 더 <code>git diff</code>로 불필요한 실험 흔적이 없는지 확인해야 합니다.
+      특정 시점의 dirty file 목록은 금방 낡으므로 기록하지 않습니다. 실행이나 커밋 전에는 아래 명령으로
+      현재 형상을 직접 확인하고, 의도하지 않은 제품 코드나 생성물이 섞이지 않았는지 점검합니다.
     </p>
-    <pre><code>M  openpilot/selfdrive/modeld/rknn_policy.py
-M  tools/rk3588/rk3588_porting_history_ko.html
-D  tools/rk3588/run_openpilot_opencl_rknn.sh
-?? tools/rk3588/mirror_ui_to_fb1.py
-?? tools/rk3588/run_live_openpilot_rk3588.sh
-?? tools/rk3588/run_webcam_bench_big_ui.sh</code></pre>
+    <pre><code>git status --short -uall
+git diff --stat
+git diff --check</code></pre>
   </section>
 
   <section>
@@ -780,10 +904,10 @@ git status --short -uall
 git diff --check
 PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -m py_compile \
   openpilot/selfdrive/modeld/rknn_policy.py \
-  tools/rk3588/mirror_ui_to_fb1.py
+  tools/rk3588/stream_ui.py
 bash -n \
-  tools/rk3588/run_live_openpilot_rk3588.sh \
-  tools/rk3588/run_webcam_bench_big_ui.sh
+  tools/rk3588/run_live.sh \
+  tools/rk3588/run_bench.sh
 grep -RInE 'MODELD_TIMING|rk3588_.*timing|gc\.collect|malloc_trim|OPENPILOT_.*GC|breakpoint\(' \
   openpilot/selfdrive/modeld tools/rk3588 openpilot/system/camerad/webcam openpilot/common/transformations || true</code></pre>
     <p class="small">
